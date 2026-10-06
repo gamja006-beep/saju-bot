@@ -1,0 +1,7 @@
+﻿heroku-x64.exe
+heroku/
+__pycache__/
+*.pyc
+.git/
+.env
+.env.local
