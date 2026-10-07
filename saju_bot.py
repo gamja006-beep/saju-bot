@@ -6,11 +6,15 @@ from flask import Flask, request, jsonify, render_template
 from saju_engine import compute_saju, SajuInputError
 import saju_insights
 import payments
+import admin
 
 app = Flask(__name__)
 
 # 주문 저장소: 결제 활성 + DATABASE_URL 이면 Postgres, 아니면 In-Memory.
 ORDER_STORE = payments.make_default_store()
+
+# 읽기 전용 관리자 주문 뷰어(별도 모듈). 자격 미설정 시 경로 자체가 404.
+app.register_blueprint(admin.admin_bp)
 
 # 유료 상품 식별자(서버측 검증용). 실제 결제는 연동하지 않는다(준비 중).
 PRODUCT_IDS = {

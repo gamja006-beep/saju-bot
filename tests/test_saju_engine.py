@@ -983,6 +983,15 @@ class FreeInsightsTest(unittest.TestCase):
         # 오행 요약 문장에 한자 표기와 '기운'이 포함된다.
         self.assertIn("기운", ins["element_note"])
 
+    def test_customer_wording_softened_but_status_kept(self):
+        ins = saju_insights.build_free_result(compute_saju("solar", "1990-05-15", "08:30", "남"))
+        joined = " ".join(ins["notes"])
+        # 고객 화면 문구는 개발자식 표현(NOT_VERIFIED)을 노출하지 않는다.
+        self.assertIn("출생시간과 해석 방식에 따라 일부 결과가 달라질 수 있는 참고자료입니다.", joined)
+        self.assertNotIn("NOT_VERIFIED", joined)
+        # 단, API 내부 정확성 상태 값은 유지한다.
+        self.assertEqual(ins["verification"], "NOT_VERIFIED")
+
 
 class FreeResultEndpointTest(unittest.TestCase):
     def setUp(self):

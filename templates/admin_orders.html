@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>결제 완료 주문</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>결제 완료 주문</h1>
+      <p class="sub">읽기 전용 · 총 {{ count }}건 (최대 100건)</p>
+    </header>
+    {% if orders %}
+    {% for o in orders %}
+    <a class="admin-card" href="/admin/orders/{{ o.order_id }}">
+      <div class="summary">
+        <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
+        <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
+        <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
+        <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
+        <div class="srow"><span class="sk">이메일</span><span class="sv">{{ o.email_masked }}</span></div>
+      </div>
+    </a>
+    {% endfor %}
+    {% else %}
+    <p class="disclaimer">결제 완료된 주문이 없습니다.</p>
+    {% endif %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>주문 상세</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>주문 상세</h1>
+      <p class="sub">읽기 전용</p>
+    </header>
+    <div class="summary">
+      <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
+      <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
+      <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
+      <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
+      <div class="srow"><span class="sk">수령 이메일</span><span class="sv">{{ o.email }}</span></div>
+    </div>
+
+    <h2 class="admin-h2">상담 내용</h2>
+    <div class="summary">
+      {% for row in o.consultation %}
+      <div class="srow"><span class="sk">{{ row.label }}</span><span class="sv">{{ row.value }}</span></div>
+      {% else %}
+      <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
+      {% endfor %}
+    </div>
+
+    <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
+  </main>
+</body>
+</html>

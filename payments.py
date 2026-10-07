@@ -157,6 +157,15 @@ class InMemoryOrderStore:
         r = self.private.get(order_id)
         return dict(r) if r else None
 
+    def list_paid_orders(self, limit=100):
+        """읽기 전용: PAID 주문만 결제일(paid_at) 최신순으로 최대 limit건."""
+        self.calls += 1
+        paid = [dict(r) for r in self.orders.values() if r.get("status") == "PAID"]
+        paid.sort(
+            key=lambda r: r.get("paid_at") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+            reverse=True)
+        return paid[:limit]
+
 
 # Railway PostgreSQL 스키마 (이번 단계에서는 실행하지 않음; 운영 배포 시 적용).
 SCHEMA_SQL = """
@@ -245,6 +254,19 @@ class PostgresOrderStore:
             cols = ["order_id", "encrypted_email", "encrypted_consultation_payload",
                     "created_at", "expires_at"]
             return dict(zip(cols, row))
+
+    def list_paid_orders(self, limit=100):
+        """읽기 전용: PAID 주문만 결제일 최신순으로 최대 limit건. 파라미터 바인딩."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT order_id, product_code, amount, currency, status, payment_key,"
+                " created_at, updated_at, paid_at, private_data_expires_at"
+                " FROM orders WHERE status = %s ORDER BY paid_at DESC LIMIT %s",
+                ("PAID", int(limit)))
+            rows = cur.fetchall()
+            cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
+                    "created_at", "updated_at", "paid_at", "private_data_expires_at"]
+            return [dict(zip(cols, r)) for r in rows]
 
 
 # ---- 주문 생성 / 결제 승인 ----
