@@ -1,8 +1,2 @@
-<<<<<<< HEAD
-﻿Flask==3.0.0
-=======
-﻿Flask==2.3.3
-Werkzeug==2.3.7
-anthropic>=0.25.0
->>>>>>> ee9285aabf571bd8486b339188de12ee31fbdf23
+Flask==3.0.0
 gunicorn==21.2.0
