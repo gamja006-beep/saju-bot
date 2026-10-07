@@ -531,5 +531,68 @@ class CustomerUITest(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class EmailAndConfirmTest(unittest.TestCase):
+    """UI 수정: 유료 이메일 입력 + 8단계 고객 확인 화면(내부 JSON 제거)."""
+
+    def setUp(self):
+        self.c = saju_bot.app.test_client()
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_email_field_present_and_hidden_by_default(self):
+        html = self._read("templates/index.html")
+        self.assertIn('id="email"', html)
+        self.assertIn('maxlength="254"', html)
+        self.assertRegex(html, r'id="paid-extra"[^>]*hidden')  # 기본 숨김(무료)
+
+    def test_email_logic_in_js(self):
+        js = self._read("static/app.js")
+        for t in ["EMAIL_RE", "validEmail", "maskEmail", "254", "trim(", "syncPaidExtra", "isPaid"]:
+            self.assertIn(t, js)
+        self.assertIn('selectedProduct = "free"', js)  # 기본 무료 -> 이메일 미수집
+
+    def test_step8_title_and_no_internal_json(self):
+        html = self._read("templates/index.html")
+        self.assertIn("신청 내용 확인", html)
+        for forbidden in ["report-json", "명리학 보고서용 자료 복사", "customer_data"]:
+            self.assertNotIn(forbidden, html)
+        js = self._read("static/app.js")
+        for forbidden in ["report-json", "/report-data", "copy-report", "customer_data"]:
+            self.assertNotIn(forbidden, js)
+
+    def test_step8_customer_fields_in_js(self):
+        js = self._read("static/app.js")
+        for t in ["선택 상품", "예상 발송 기간", "수령 이메일", "maskEmail(", "무료 명식"]:
+            self.assertIn(t, js)
+
+    def test_no_fake_order_or_completion_language(self):
+        blob = self._read("static/app.js") + self._read("templates/index.html")
+        self.assertIn("아직 주문이 접수되지 않습니다", blob)
+        for bad in ["주문번호", "접수 완료", "결제 완료", "발송 완료"]:
+            self.assertNotIn(bad, blob)
+
+    def test_free_complete_button_label(self):
+        js = self._read("static/app.js")
+        self.assertIn("무료 명식 확인 완료", js)
+
+    def test_report_data_excludes_email(self):
+        r = self.c.post("/report-data", json={
+            "calendar": "solar", "birth_date": "1990-05-15", "gender": "남",
+            "consultation_type": "종합", "selected_product": "expert_99000",
+            "email": "user@example.com"})
+        self.assertEqual(r.status_code, 200)
+        import json as _json
+        blob = _json.dumps(r.get_json(), ensure_ascii=False)
+        self.assertNotIn("user@example.com", blob)
+        self.assertNotIn("email", r.get_json()["report"]["customer_data"])
+
+    def test_payment_still_disabled(self):
+        js = self._read("static/app.js")
+        self.assertIn("결제 기능 준비 중", js)
+        self.assertIn("disabled", js)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

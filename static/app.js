@@ -22,13 +22,13 @@ var CITIES = [
 
 // 상품: 실제 결제 미연동(준비 중). 'expert' 뱃지는 실제 전문가 검토 상품에만.
 var PRODUCTS = [
-  { id: "free", name: "무료 명식", price: "0원", kind: "free", desc: "출생정보로 사주 4주를 즉시 확인합니다.", delivery: "화면 즉시" },
-  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "ai", desc: "AI 기반 자동 해석 보고서.", delivery: "화면 자동 제공" },
-  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "ai", desc: "AI 기반 자동 해석을 이메일로 발송.", delivery: "이메일 · 24시간 이내" },
-  { id: "expert_99000", name: "전문가 보고서", price: "99,000원", kind: "expert", desc: "실제 전문가가 검토하는 보고서.", delivery: "이메일 · 1~3영업일" },
-  { id: "life_290000", name: "인생설계 보고서", price: "290,000원", kind: "ai", desc: "AI 심층 분석 + 비대면 추가질문 1회.", delivery: "이메일" },
-  { id: "relation_590000", name: "관계·사업 보고서", price: "590,000원", kind: "ai", desc: "복수 명식 분석 + 비대면 추가질문 2회.", delivery: "이메일" },
-  { id: "vip_990000", name: "연간 VIP", price: "990,000원", kind: "ai", desc: "연간·분기별 이메일 보고서.", delivery: "이메일 · 연간" }
+  { id: "free", name: "무료 명식", price: "0원", kind: "free", desc: "출생정보로 사주 4주를 즉시 확인합니다.", method: "화면", eta: "즉시" },
+  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "ai", desc: "AI 기반 자동 해석 보고서.", method: "화면(자동)", eta: "즉시~수분" },
+  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "ai", desc: "AI 기반 자동 해석을 이메일로 발송.", method: "이메일", eta: "24시간 이내" },
+  { id: "expert_99000", name: "전문가 보고서", price: "99,000원", kind: "expert", desc: "실제 전문가가 검토하는 보고서.", method: "이메일", eta: "1~3영업일" },
+  { id: "life_290000", name: "인생설계 보고서", price: "290,000원", kind: "ai", desc: "AI 심층 분석 + 비대면 추가질문 1회.", method: "이메일", eta: "영업일 기준 수일" },
+  { id: "relation_590000", name: "관계·사업 보고서", price: "590,000원", kind: "ai", desc: "복수 명식 분석 + 비대면 추가질문 2회.", method: "이메일", eta: "영업일 기준 수일" },
+  { id: "vip_990000", name: "연간 VIP", price: "990,000원", kind: "ai", desc: "연간·분기별 이메일 보고서.", method: "이메일", eta: "연간·분기별" }
 ];
 
 var TOTAL_STEPS = 8;
@@ -54,6 +54,23 @@ function val(name) { var el = form.elements[name]; return el ? el.value : ""; }
 function checked(name) {
   var els = form.querySelectorAll('input[name="' + name + '"]:checked');
   return els.length ? els[0].value : "";
+}
+function productById(id) {
+  for (var i = 0; i < PRODUCTS.length; i++) if (PRODUCTS[i].id === id) return PRODUCTS[i];
+  return PRODUCTS[0];
+}
+function isPaid(id) { return id !== "free"; }
+
+// ---- 이메일 ----
+var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function emailValue() { return (val("email") || "").trim(); }
+function validEmail(e) { return e.length > 0 && e.length <= 254 && EMAIL_RE.test(e); }
+function maskEmail(e) {
+  var at = e.indexOf("@");
+  if (at < 1) return "***";
+  var local = e.slice(0, at), dom = e.slice(at);
+  var shown = local.slice(0, Math.min(2, local.length));
+  return shown + "***" + dom;
 }
 
 // 도시 목록 채우기
@@ -98,19 +115,19 @@ function midpoint(a, b) {
   var mm = String(m % 60).padStart(2, "0");
   return hh + ":" + mm;
 }
-
 function birthTime() {
   var st = checked("time_status");
   if (st === "exact") return val("birth_time") || null;
   if (st === "approx") { var r = midpoint(val("birth_time_from"), val("birth_time_to")); return r || null; }
-  return null; // unknown
+  return null;
 }
-
+function timeStatusLabel() {
+  return { exact: "정확", approx: "대략", unknown: "모름" }[checked("time_status")] || "-";
+}
 function cityInfo() {
   var idx = parseInt(document.getElementById("city-select").value, 10) || 0;
   return CITIES[idx];
 }
-
 function topicsSelected() {
   return Array.prototype.map.call(
     form.querySelectorAll('input[name="topics"]:checked'), function (e) { return e.value; });
@@ -128,19 +145,6 @@ function basePayload() {
   var bp = { country: "KR", city: city.lon === null ? "" : city.name };
   if (city.lon !== null) bp.longitude = city.lon;
   p.birth_place = bp;
-  return p;
-}
-
-function reportPayload() {
-  var p = basePayload();
-  p.alias = val("alias");
-  p.consultation_type = checked("consultation_type");
-  p.topics = topicsSelected();
-  p.question = val("question");
-  p.situation = val("situation");
-  p.fortune_requested = !!form.elements["fortune_requested"].checked;
-  p.target_period = val("target_period");
-  p.selected_product = selectedProduct;
   return p;
 }
 
@@ -167,31 +171,102 @@ function renderMyeongsik(data) {
   box.innerHTML = html;
 }
 
+function syncPaidExtra() {
+  document.getElementById("paid-extra").hidden = !isPaid(selectedProduct);
+}
+
 function renderProducts() {
   var box = document.getElementById("products");
   box.innerHTML = "";
   PRODUCTS.forEach(function (pr) {
     var div = document.createElement("div");
     div.className = "product" + (pr.kind === "free" ? " free" : "");
+    div.setAttribute("role", "radio");
+    div.setAttribute("tabindex", "0");
+    div.setAttribute("aria-checked", pr.id === selectedProduct ? "true" : "false");
     var badge = pr.kind === "expert"
       ? "<span class=\"badge expert\">전문가 검토</span>"
       : (pr.kind === "ai" ? "<span class=\"badge ai\">AI 기반 자동 해석</span>" : "");
-    var html = "<div><span class=\"name\">" + esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
+    var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
+      esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
-    html += "<div class=\"meta\">제공: " + esc(pr.delivery) + "</div>";
+    html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(pr.eta) + "</div>";
     if (pr.kind !== "free") {
       html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
-    } else {
-      html += "<div class=\"meta\">6단계에서 바로 확인할 수 있습니다.</div>";
     }
     div.innerHTML = html;
-    div.addEventListener("click", function () {
+    function pick() {
       selectedProduct = pr.id;
-      Array.prototype.forEach.call(box.children, function (c) { c.style.outline = ""; });
-      div.style.outline = "2px solid #5b6ef5";
+      Array.prototype.forEach.call(box.children, function (c) {
+        c.classList.remove("selected");
+        c.setAttribute("aria-checked", "false");
+      });
+      div.classList.add("selected");
+      div.setAttribute("aria-checked", "true");
+      syncPaidExtra();
+      setError("");
+    }
+    div.addEventListener("click", pick);
+    div.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
     });
     box.appendChild(div);
   });
+  // 초기 선택 반영
+  Array.prototype.forEach.call(box.children, function (c, i) {
+    if (PRODUCTS[i].id === selectedProduct) c.classList.add("selected");
+  });
+  syncPaidExtra();
+}
+
+// ---- 8단계: 고객용 신청 내용 확인 ----
+function row(label, value) {
+  return "<div class=\"srow\"><span class=\"sk\">" + esc(label) + "</span><span class=\"sv\">" + esc(value) + "</span></div>";
+}
+function renderConfirm() {
+  var box = document.getElementById("confirm");
+  var pr = productById(selectedProduct);
+  var cal = checked("calendar") === "lunar" ? "음력" : "양력";
+  var leap = form.elements["is_leap_month"].checked ? " (윤달)" : "";
+  var birth = cal + " " + (val("birth_date") || "-") + leap + " · " + checked("gender");
+  var city = cityInfo();
+  var region = city.lon === null ? "모름(미보정)" : city.name;
+  var topics = topicsSelected();
+
+  var html = "";
+  html += row("별칭", val("alias") || "(미입력)");
+  html += row("상담 유형", checked("consultation_type"));
+  html += row("출생 정보", birth);
+  html += row("출생시간 상태", timeStatusLabel());
+  html += row("출생 지역", region);
+  html += row("관심 주제", topics.length ? topics.join(", ") : "(선택 안 함)");
+  html += row("선택 상품", pr.name + " · " + pr.price);
+  html += row("제공 방식", pr.method);
+  html += row("예상 발송 기간", pr.eta);
+  if (isPaid(selectedProduct)) {
+    html += row("수령 이메일", maskEmail(emailValue()));
+  }
+
+  if (lastSaju && lastSaju.pillars) {
+    var p = lastSaju.pillars;
+    var four = [p.year, p.month, p.day, p.time].map(function (x) { return x ? x.ganzhi : "미상"; }).join(" ");
+    html += "<div class=\"srow\"><span class=\"sk\">무료 명식</span><span class=\"sv gz-line\">" + esc(four) + "</span></div>";
+  }
+  box.innerHTML = html;
+
+  // 완료 영역
+  var area = document.getElementById("complete-area");
+  if (isPaid(selectedProduct)) {
+    area.innerHTML = "<p class=\"paid-notice\">현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다.</p>" +
+      "<button type=\"button\" class=\"btn primary\" disabled>결제 기능 준비 중</button>";
+  } else {
+    area.innerHTML = "<button type=\"button\" id=\"free-done\" class=\"btn primary\">무료 명식 확인 완료</button>" +
+      "<span id=\"done-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
+    var btn = document.getElementById("free-done");
+    btn.addEventListener("click", function () {
+      document.getElementById("done-status").textContent = "무료 명식을 확인했습니다.";
+    });
+  }
 }
 
 function validateStep(n) {
@@ -202,6 +277,14 @@ function validateStep(n) {
   if (n === 3) {
     var st = checked("time_status");
     if (st === "exact" && !val("birth_time")) { setError("정확한 시간을 입력하거나 '대략' 또는 '몰라요'를 선택해 주세요."); return false; }
+  }
+  if (n === 7) {
+    if (isPaid(selectedProduct)) {
+      var e = emailValue();
+      if (!e) { setError("유료 보고서를 받을 이메일을 입력해 주세요."); return false; }
+      if (e.length > 254) { setError("이메일은 254자 이하여야 합니다."); return false; }
+      if (!validEmail(e)) { setError("이메일 형식이 올바르지 않습니다. 예: you@example.com"); return false; }
+    }
   }
   return true;
 }
@@ -225,8 +308,7 @@ function onEnter(n) {
   } else if (n === 7) {
     renderProducts();
   } else if (n === 8) {
-    document.getElementById("report-json").textContent = "";
-    document.getElementById("copy-status").textContent = "";
+    renderConfirm();
   }
 }
 
@@ -236,7 +318,7 @@ function show(n) {
   bar.style.width = (current / TOTAL_STEPS * 100) + "%";
   stepLabel.textContent = current + " / " + TOTAL_STEPS;
   prevBtn.disabled = current === 1;
-  nextBtn.textContent = current === TOTAL_STEPS ? "완료" : "다음";
+  nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
   onEnter(current);
 }
 
@@ -245,27 +327,6 @@ nextBtn.addEventListener("click", function () {
   if (current < TOTAL_STEPS) show(current + 1);
 });
 prevBtn.addEventListener("click", function () { if (current > 1) show(current - 1); });
-
-document.getElementById("copy-report").addEventListener("click", function () {
-  var status = document.getElementById("copy-status");
-  status.textContent = "자료 생성 중...";
-  fetchJSON("/report-data", reportPayload()).then(function (res) {
-    if (!res.ok || res.body.status !== "ok") {
-      status.textContent = res.body.message || "생성 실패";
-      return;
-    }
-    var text = JSON.stringify(res.body.report, null, 2);
-    document.getElementById("report-json").textContent = text;
-    function done() { status.textContent = "복사되었습니다."; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function () {
-        status.textContent = "복사 실패 — 아래 내용을 길게 눌러 복사하세요.";
-      });
-    } else {
-      status.textContent = "아래 내용을 길게 눌러 복사하세요.";
-    }
-  }).catch(function () { status.textContent = "오류가 발생했습니다."; });
-});
 
 syncCalendar();
 syncTimeStatus();

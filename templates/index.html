@@ -120,7 +120,15 @@
       <!-- STEP 7: 상품 비교 -->
       <section class="step" data-step="7" hidden>
         <h2>7. 보고서 상품</h2>
-        <div id="products" class="products"></div>
+        <div id="products" class="products" role="radiogroup" aria-label="보고서 상품 선택"></div>
+        <div id="paid-extra" hidden>
+          <p class="paid-notice">현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다.</p>
+          <label class="field">수령 이메일 <span class="req">*</span>
+            <input type="email" name="email" id="email" maxlength="254" inputmode="email"
+                   autocomplete="email" placeholder="you@example.com">
+          </label>
+          <p class="hint">유료 보고서 주문·발송용으로만 사용됩니다. 전화번호는 받지 않습니다.</p>
+        </div>
         <ul class="notices">
           <li>전화·화상·대면 상담은 제공하지 않습니다. 모든 결과는 화면 또는 이메일로만 제공됩니다.</li>
           <li>'전문가 검토' 표시 상품만 실제 전문가가 검토합니다. 그 외는 AI 기반 자동 해석입니다.</li>
@@ -128,13 +136,15 @@
         </ul>
       </section>
 
-      <!-- STEP 8: 보고서 자료 -->
+      <!-- STEP 8: 신청 내용 확인 -->
       <section class="step" data-step="8" hidden>
-        <h2>8. 보고서용 자료</h2>
-        <p class="hint">아래 자료를 복사해 명리학 보고서 작성에 사용할 수 있습니다. 이메일·전화·결제·상세주소는 포함되지 않습니다.</p>
-        <button type="button" id="copy-report" class="btn primary">명리학 보고서용 자료 복사</button>
-        <span id="copy-status" class="copy-status" aria-live="polite"></span>
-        <pre id="report-json" class="report-json" aria-label="보고서 자료 미리보기"></pre>
+        <h2>8. 신청 내용 확인</h2>
+        <div id="confirm" class="summary"></div>
+        <p class="disclaimer">
+          본 결과는 명리학 참고용이며 미래를 확정적으로 단정하지 않습니다.
+          한국 음력은 KASI 기준이나 전체 정확성은 독립 검증 전까지 확정되지 않았습니다.
+        </p>
+        <div id="complete-area"></div>
       </section>
 
       <div class="nav">
