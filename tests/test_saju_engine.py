@@ -843,5 +843,60 @@ class PaymentUITest(unittest.TestCase):
         self.assertNotIn("금액이 차감됩니다", blob)
 
 
+class PaymentLaunchFixTest(unittest.TestCase):
+    """결제창 호출 회귀: v2 Promise/동기 예외 모두 처리 + 안전한 콘솔 로깅.
+
+    장애: /api/orders=200 이후 결제창 단계에서 예외가 catch 로 삼켜져(로그 없음)
+    고객에게 '결제를 시작하지 못했습니다.'만 표시되고 콘솔에 단서가 남지 않았다.
+    """
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_v2_api_shape_not_mixed_with_v1(self):
+        js = self._read("static/app.js")
+        # v2 결제창형: TossPayments -> payment({customerKey}) -> requestPayment({method, amount:{...}})
+        self.assertIn("TossPayments(window.PAY_CONFIG.clientKey)", js)
+        self.assertIn("TossPayments.ANONYMOUS", js)
+        self.assertIn("requestPayment(", js)
+        self.assertIn('amount: { currency: "KRW"', js)  # v2 금액은 객체
+        # v1 잔재가 섞이면 안 된다: 포지셔널 '카드', 숫자 amount, /v1/ SDK
+        self.assertNotIn('requestPayment("카드"', js)
+        self.assertNotIn("requestPayment('카드'", js)
+        self.assertNotIn("js.tosspayments.com/v1", js)
+
+    def test_request_payment_promise_and_sync_both_handled(self):
+        js = self._read("static/app.js")
+        # requestPayment 반환 Promise 처리(비동기 reject) + try/catch(동기 throw)
+        self.assertIn('typeof req.then === "function"', js)
+        self.assertIn("req.catch(onPayError)", js)
+        self.assertIn("} catch (e) {", js)
+        self.assertIn("onPayError(e)", js)
+
+    def test_customer_email_passed_to_toss(self):
+        js = self._read("static/app.js")
+        self.assertIn("customerEmail: emailValue()", js)
+
+    def test_catch_logs_code_and_message_only(self):
+        js = self._read("static/app.js")
+        self.assertIn("console.error", js)
+        self.assertIn("code: err.code", js)
+        self.assertIn("message: err.message", js)
+        # 고객에게는 안전한 한국어 메시지만.
+        self.assertIn("결제를 시작하지 못했습니다.", js)
+
+    def test_console_calls_never_leak_secrets_or_pii(self):
+        js = self._read("static/app.js")
+        # 콘솔로 가는 모든 라인에 비밀값/이메일/주문자료가 섞이지 않아야 한다.
+        forbidden = ["clientKey", "PAY_CONFIG", "emailValue(", "orderPayload(",
+                     "o.email", "secret", "ORDER_ENCRYPTION"]
+        for line in js.splitlines():
+            if "console." in line:
+                for bad in forbidden:
+                    self.assertNotIn(bad, line,
+                                     "console 라인에 민감정보 토큰 노출: %s" % line.strip())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

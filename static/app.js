@@ -297,6 +297,14 @@ function orderPayload() {
   return p;
 }
 
+// 콘솔에는 진단용 code/message만 남긴다. 비밀값·이메일·주문자료는 절대 출력하지 않는다.
+function logPayError(e) {
+  if (window.console && console.error) {
+    var err = e || {};
+    console.error("[pay] requestPayment 실패", { code: err.code || "", message: err.message || "" });
+  }
+}
+
 // 결제 활성 환경(테스트)에서만 호출된다. 토스 SDK v2 결제창형, 비회원 ANONYMOUS.
 function startPayment() {
   var status = document.getElementById("pay-status");
@@ -308,19 +316,26 @@ function startPayment() {
     }
     var o = res.body;
     if (typeof TossPayments === "undefined") { status.textContent = "결제 모듈을 불러오지 못했습니다."; return; }
+    function onPayError(e) {
+      logPayError(e);
+      status.textContent = "결제를 시작하지 못했습니다.";
+    }
     try {
       var tp = TossPayments(window.PAY_CONFIG.clientKey);
       var payment = tp.payment({ customerKey: TossPayments.ANONYMOUS });
-      payment.requestPayment({
+      // v2 requestPayment 는 Promise 를 반환한다. 동기 throw 와 비동기 reject 를 모두 처리한다.
+      var req = payment.requestPayment({
         method: "CARD",
         amount: { currency: "KRW", value: o.amount },
         orderId: o.orderId,
         orderName: o.orderName,
+        customerEmail: emailValue(),
         successUrl: window.location.origin + "/payment/success",
         failUrl: window.location.origin + "/payment/fail"
       });
+      if (req && typeof req.then === "function") { req.catch(onPayError); }
     } catch (e) {
-      status.textContent = "결제를 시작하지 못했습니다.";
+      onPayError(e);
     }
   }).catch(function () { status.textContent = "오류가 발생했습니다."; });
 }
