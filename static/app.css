@@ -101,7 +101,45 @@ table.pillars .ko { font-size: 12px; color: #555; }
 .sv.gz-line { font-size: 18px; letter-spacing: 2px; }
 #complete-area { margin-top: 16px; }
 
+/* ---- 무료 사주 요약 ---- */
+.free-result { margin-top: 4px; }
+.fr-title { font-size: 20px; font-weight: 800; margin: 2px 0 4px; line-height: 1.35; }
+.fr-label { display: inline-block; font-size: 12px; font-weight: 700; color: #4a4fb0;
+  background: #eef0fe; border-radius: 99px; padding: 4px 10px; margin: 0 0 12px; }
+.fr-persona { font-size: 16px; line-height: 1.6; margin: 0 0 8px; }
+.fr-h { font-size: 15px; font-weight: 800; margin: 18px 0 6px; color: #2b2f45; }
+.fr-p { font-size: 15px; line-height: 1.6; margin: 0 0 6px; color: #2b2f45; }
+.fr-note { font-size: 13px; color: #6b7280; margin: 6px 0; }
+.fr-warn { font-size: 13px; color: #8a5a00; background: #fff6e0; border-radius: 8px;
+  padding: 9px 11px; margin: 8px 0 0; line-height: 1.5; }
+.fr-disclaimer { font-size: 12px; color: #6b7280; margin-top: 16px; line-height: 1.5;
+  border-top: 1px solid #eef0f4; padding-top: 12px; }
+.fr-strength { margin: 2px 0 4px; padding-left: 20px; }
+.fr-strength li { font-size: 15px; line-height: 1.6; margin: 3px 0; }
+
+.fr-topic { background: #f6f7ff; border: 1px solid #e3e6ff; border-radius: 12px;
+  padding: 12px 14px; margin: 8px 0; }
+.fr-topic-name { font-size: 14px; font-weight: 800; color: #4a4fb0; margin-bottom: 4px; }
+.fr-lock { display: flex; align-items: center; gap: 10px; margin: 10px 0 2px;
+  padding: 12px 14px; border: 1px dashed #b7bcc7; border-radius: 12px; background: #fafbff; }
+.fr-lock-ico { font-size: 18px; flex: 0 0 auto; }
+.fr-lock-txt { font-size: 13px; color: #555; line-height: 1.5; }
+
+.fr-elements { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 2px; }
+.fr-el-row { display: flex; align-items: center; gap: 10px; }
+.fr-el-k { flex: 0 0 24px; font-weight: 800; font-size: 14px; color: #2b2f45; }
+.fr-el-bar { flex: 1; height: 14px; background: #eef0f4; border-radius: 99px; overflow: hidden; }
+.fr-el-fill { display: block; height: 100%; background: linear-gradient(90deg,#5b6ef5,#8b5bf5); border-radius: 99px; }
+.fr-el-n { flex: 0 0 20px; text-align: right; font-size: 13px; color: #6b7280; }
+
+.fr-share { margin-top: 18px; padding: 14px; border: 1px solid #e3e6ff; border-radius: 14px; background: #f8f9ff; }
+.fr-share-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.fr-btn { flex: 1 1 140px; min-height: 48px; padding: 13px; font-size: 15px; }
+.fr-more { width: 100%; margin-top: 12px; min-height: 48px; font-size: 15px; }
+
 @media (max-width: 360px) {
   body { font-size: 16px; }
   .choice { font-size: 15px; }
+  .fr-title { font-size: 18px; }
+  .fr-btn { flex: 1 1 100%; }
 }

@@ -17,6 +17,7 @@ if ROOT not in sys.path:
 import saju_engine
 from saju_engine import compute_saju, SajuInputError
 import saju_bot
+import saju_insights
 import payments
 from cryptography.fernet import Fernet
 
@@ -596,9 +597,11 @@ class EmailAndConfirmTest(unittest.TestCase):
         for bad in ["주문번호", "접수 완료", "결제 완료", "발송 완료"]:
             self.assertNotIn(bad, blob)
 
-    def test_free_complete_button_label(self):
+    def test_free_complete_button_removed(self):
+        # 무료 결과 화면 개편: 중복 '무료 명식 확인 완료' 버튼/문구 제거.
         js = self._read("static/app.js")
-        self.assertIn("무료 명식 확인 완료", js)
+        self.assertNotIn("무료 명식 확인 완료", js)
+        self.assertNotIn('id="free-done"', js)
 
     def test_report_data_excludes_email(self):
         r = self.c.post("/report-data", json={
@@ -896,6 +899,257 @@ class PaymentLaunchFixTest(unittest.TestCase):
                 for bad in forbidden:
                     self.assertNotIn(bad, line,
                                      "console 라인에 민감정보 토큰 노출: %s" % line.strip())
+
+
+class FreeInsightsTest(unittest.TestCase):
+    """saju_insights: 순수 결정형 무료 요약 생성기."""
+
+    _FEAR = ["죽음", "사망", "이혼", "파산", "질병", "공포", "위험합니다", "불행", "재앙"]
+
+    def test_all_ten_day_masters_valid(self):
+        gans = set()
+        for d in range(1, 11):  # 10일 연속 -> 일간(日干) 10종 모두 등장
+            saju = compute_saju("solar", "2000-01-%02d" % d, "08:30", "남")
+            gans.add(saju["pillars"]["day"]["gan"])
+            ins = saju_insights.build_free_result(saju, alias="바다", topics=["재물"])
+            self.assertTrue(ins["persona_title"])
+            self.assertEqual(len(ins["strengths"]), 3)
+            self.assertEqual(len(ins["keywords"]), 3)
+            for key in ("persona_sentence", "others_view", "relationship",
+                        "caution", "suggestion", "element_note", "disclaimer"):
+                self.assertTrue(ins[key], key)
+            self.assertEqual(ins["reference_label"], "전통 명리학 관점의 자기이해 참고자료")
+            self.assertEqual(ins["verification"], "NOT_VERIFIED")
+        self.assertEqual(len(gans), 10)
+
+    def test_deterministic_same_input_same_output(self):
+        saju = compute_saju("solar", "1990-05-15", "08:30", "남")
+        a = saju_insights.build_free_result(saju, alias="바다", topics=["재물", "직업", "연애"])
+        b = saju_insights.build_free_result(saju, alias="바다", topics=["재물", "직업", "연애"])
+        self.assertEqual(a, b)
+
+    def test_topic_previews_max_two_each_two_lines(self):
+        saju = compute_saju("solar", "1990-05-15", "08:30", "남")
+        ins = saju_insights.build_free_result(saju, topics=["재물", "직업", "연애", "가족", "학업"])
+        self.assertEqual(len(ins["topic_previews"]), 2)
+        for tp in ins["topic_previews"]:
+            self.assertEqual(len(tp["lines"]), 2)
+        self.assertEqual(ins["paid_hint"],
+                         "선택한 주제를 명식 근거와 현실적인 실행 제안까지 연결해 자세히 살펴봅니다.")
+
+    def test_topic_alias_affection_maps_to_romance(self):
+        saju = compute_saju("solar", "1990-05-15", "08:30", "남")
+        ins = saju_insights.build_free_result(saju, topics=["애정"])
+        self.assertEqual(ins["topic_previews"][0]["topic"], "연애")
+
+    def test_unknown_topic_ignored(self):
+        saju = compute_saju("solar", "1990-05-15", "08:30", "남")
+        ins = saju_insights.build_free_result(saju, topics=["주식대박", "로또"])
+        self.assertEqual(ins["topic_previews"], [])
+
+    def test_time_missing_note_and_six_elements(self):
+        saju = compute_saju("solar", "1990-05-15", None, "남")
+        self.assertIsNone(saju["pillars"]["time"])
+        ins = saju_insights.build_free_result(saju, topics=[])
+        self.assertIn("시주", " ".join(ins["notes"]))
+        self.assertEqual(sum(ins["elements"].values()), 6)  # 3주 x (간+지)
+
+    def test_with_time_eight_elements(self):
+        saju = compute_saju("solar", "1990-05-15", "08:30", "남")
+        ins = saju_insights.build_free_result(saju, topics=[])
+        self.assertEqual(sum(ins["elements"].values()), 8)  # 4주 x (간+지)
+
+    def test_no_fear_language_across_all_topics(self):
+        for d in range(1, 11):
+            saju = compute_saju("solar", "2000-01-%02d" % d, "08:30", "남")
+            ins = saju_insights.build_free_result(
+                saju, topics=["재물", "직업", "연애", "가족", "학업", "건강", "올해의 흐름"])
+            blob = repr(ins)
+            for w in self._FEAR:
+                self.assertNotIn(w, blob, "fear word leaked: %s" % w)
+
+    def test_disclaimer_text(self):
+        ins = saju_insights.build_free_result(compute_saju("solar", "1990-05-15", "08:30", "남"))
+        self.assertIn("자기이해 참고자료", ins["disclaimer"])
+        self.assertIn("의료·법률·재정", ins["disclaimer"])
+
+    def test_alias_control_chars_stripped(self):
+        ins = saju_insights.build_free_result(
+            compute_saju("solar", "1990-05-15", "08:30", "남"), alias="바\x00다\x07")
+        self.assertEqual(ins["alias"], "바다")
+
+    def test_dominant_element_note(self):
+        ins = saju_insights.build_free_result(compute_saju("solar", "1990-05-15", "08:30", "남"))
+        # 오행 요약 문장에 한자 표기와 '기운'이 포함된다.
+        self.assertIn("기운", ins["element_note"])
+
+
+class FreeResultEndpointTest(unittest.TestCase):
+    def setUp(self):
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        self.c = saju_bot.app.test_client()
+
+    def _ok_payload(self, **over):
+        p = {"calendar": "solar", "birth_date": "1990-05-15", "birth_time": "08:30",
+             "gender": "남", "alias": "바다", "topics": ["재물", "직업"]}
+        p.update(over)
+        return p
+
+    def test_free_insights_ok(self):
+        r = self.c.post("/free-insights", json=self._ok_payload())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["status"], "ok")
+        self.assertIn("saju", body)
+        self.assertIn("insight", body)
+        self.assertEqual(len(body["insight"]["topic_previews"]), 2)
+
+    def test_free_insights_no_db_calls(self):
+        self.c.post("/free-insights", json=self._ok_payload())
+        self.assertEqual(saju_bot.ORDER_STORE.calls, 0)  # 무료 = DB 호출 0회
+
+    def test_free_insights_bad_input_400(self):
+        r = self.c.post("/free-insights", json={"calendar": "solar", "birth_date": "bad", "gender": "남"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["status"], "error")
+
+    def test_free_insights_insight_excludes_pii(self):
+        r = self.c.post("/free-insights", json=self._ok_payload(email="user@example.com"))
+        import json as _json
+        insight_blob = _json.dumps(r.get_json()["insight"], ensure_ascii=False)
+        self.assertNotIn("user@example.com", insight_blob)
+        self.assertNotIn("1990-05-15", insight_blob)
+        self.assertNotIn("남", insight_blob)
+
+    def test_free_insights_time_missing_ok(self):
+        r = self.c.post("/free-insights", json=self._ok_payload(birth_time=None))
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(r.get_json()["saju"]["pillars"]["time"])
+
+
+class FreeResultUITest(unittest.TestCase):
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_step6_container_present(self):
+        self.assertIn('id="free-result"', self._read("templates/index.html"))
+
+    def test_js_calls_free_insights(self):
+        js = self._read("static/app.js")
+        self.assertIn('fetchJSON("/free-insights"', js)
+        self.assertIn("renderFreeResult", js)
+
+    def test_js_result_sections_in_order_korean_first(self):
+        js = self._read("static/app.js")
+        for t in ["사주 한 장 요약", "타고난 강점", "사람들이 느끼는 모습", "관계 성향",
+                  "조심하면 좋은 점", "오늘부터 적용할 제안", "관심 주제 미리보기", "오행 분포"]:
+            self.assertIn(t, js)
+        # 한국어 성향이 한자 명식보다 먼저 렌더된다.
+        self.assertLess(js.index('"fr-persona"'), js.index("renderMyeongsikInto(ms"))
+
+    def test_xss_alias_rendered_as_textcontent(self):
+        js = self._read("static/app.js")
+        self.assertIn("function el(", js)
+        self.assertIn('el("h3", "fr-title", aliasName', js)  # 제목은 textContent 로 생성
+        self.assertIn('box.innerHTML = ""', js)              # 초기화 후 el()/textContent 삽입
+        self.assertNotIn("innerHTML = aliasName", js)
+
+    def test_disclaimer_rendered(self):
+        self.assertIn("ins.disclaimer", self._read("static/app.js"))
+
+    def test_no_dev_json_shown(self):
+        js = self._read("static/app.js")
+        for bad in ["JSON.stringify(res", "customer_data", "/report-data"]:
+            self.assertNotIn(bad, js)
+
+
+class ProductDisplayTest(unittest.TestCase):
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_seven_products_retained(self):
+        js = self._read("static/app.js")
+        for pid in ["free", "basic_9900", "deep_39000", "expert_99000",
+                    "life_290000", "relation_590000", "vip_990000"]:
+            self.assertIn(pid, js)
+
+    def test_prices_unchanged(self):
+        js = self._read("static/app.js")
+        for price in ["0원", "9,900원", "39,000원", "99,000원", "290,000원", "590,000원", "990,000원"]:
+            self.assertIn(price, js)
+
+    def test_representative_three_and_more_toggle(self):
+        js = self._read("static/app.js")
+        self.assertIn("REPRESENTATIVE_PRODUCTS", js)
+        self.assertIn("프리미엄 보고서 더 보기", js)
+        self.assertIn("product-extra", js)
+        for pid in ["free", "basic_9900", "expert_99000"]:  # 대표 3개
+            self.assertIn(pid, js)
+
+    def test_toss_flow_unchanged(self):
+        # 결제 테스트 흐름/토스 코드는 변경하지 않는다(회귀 가드).
+        js = self._read("static/app.js")
+        self.assertIn("TossPayments.ANONYMOUS", js)
+        self.assertIn("customerEmail: emailValue()", js)
+        self.assertIn("결제 기능 준비 중", js)
+
+
+class ShareCardPrivacyTest(unittest.TestCase):
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_share_buttons_present(self):
+        js = self._read("static/app.js")
+        for t in ["결과 이미지 저장", "친구에게 공유", "링크 복사"]:
+            self.assertIn(t, js)
+
+    def test_share_uses_canvas_no_cdn(self):
+        js = self._read("static/app.js")
+        self.assertIn('createElement("canvas")', js)
+        html = self._read("templates/index.html")
+        self.assertNotIn("cdn", html.lower())  # 외부 CDN 추가 금지
+        # 토스 SDK(결제 활성 시)만 외부 스크립트. 그 외 외부 script src 없음.
+        self.assertEqual(html.count("<script src="), 2)  # app.js + 토스(조건부)
+
+    def test_share_card_excludes_personal_info(self):
+        js = self._read("static/app.js")
+        body = js[js.index("function drawShareCard("):js.index("function shareStatusEl(")]
+        for bad in ["alias", "email", "birth_date", "birth_time", "birth_place",
+                    "gender", "val(", "emailValue", "pillars", "orderId", "lunar", "solar"]:
+            self.assertNotIn(bad, body)
+        for good in ["나의 사주 키워드", "persona_title", "keywords", "SERVICE_NAME",
+                     "homepageUrl()", "당신의 사주 키워드는?"]:
+            self.assertIn(good, body)
+
+    def test_share_url_is_public_origin_only(self):
+        js = self._read("static/app.js")
+        self.assertIn("window.location.origin", js)
+        for bad in ["?alias=", "?birth", "?email=", "?order", "?name="]:
+            self.assertNotIn(bad, js)
+
+    def test_no_client_storage_of_free_result(self):
+        js = self._read("static/app.js")
+        self.assertNotIn("localStorage", js)
+        self.assertNotIn("sessionStorage", js)
+
+
+class MobileUXTest(unittest.TestCase):
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_viewport_meta(self):
+        self.assertIn("width=device-width", self._read("templates/index.html"))
+
+    def test_button_min_height_48(self):
+        css = self._read("static/app.css")
+        self.assertIn("min-height: 48px", css)
+
+    def test_mobile_breakpoint_present(self):
+        self.assertIn("max-width: 360px", self._read("static/app.css"))
 
 
 if __name__ == "__main__":

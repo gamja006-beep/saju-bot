@@ -40,7 +40,21 @@ var PRODUCT_CODE = {
 var TOTAL_STEPS = 8;
 var current = 1;
 var lastSaju = null;
+var lastInsight = null;
 var selectedProduct = "free";
+
+// 공유 카드에 들어가는 공개 정보(개인정보 아님).
+var SERVICE_NAME = "사주 상담";
+// 상품 비교에서 처음 보여줄 대표 3개(무료/핵심/전문가). 나머지는 '더 보기'로 펼침.
+var REPRESENTATIVE_PRODUCTS = { free: true, basic_9900: true, expert_99000: true };
+
+// 안전한 DOM 생성 헬퍼: 동적 텍스트는 항상 textContent 로만 넣는다(XSS 방지).
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
 
 var form = document.getElementById("intake");
 var steps = Array.prototype.slice.call(document.querySelectorAll(".step"));
@@ -160,8 +174,8 @@ function pillarCell(p) {
     esc((p.gan_ko || "") + (p.zhi_ko || "")) + "</span></td>";
 }
 
-function renderMyeongsik(data) {
-  var box = document.getElementById("myeongsik");
+// 명식(한자) 테이블. pillar 값은 서버 산출(고정 문자셋)이며 esc 로 이스케이프한다.
+function renderMyeongsikInto(box, data) {
   var p = data.pillars;
   var html = "<table class=\"pillars\"><tr><th>연주</th><th>월주</th><th>일주</th><th>시주</th></tr><tr>" +
     pillarCell(p.year) + pillarCell(p.month) + pillarCell(p.day) + pillarCell(p.time) + "</tr></table>";
@@ -171,10 +185,238 @@ function renderMyeongsik(data) {
   html += "<br>" + esc(data.lunar.text) + "</div>";
   var tc = data.time_correction || {};
   html += "<div class=\"meta\">시간·지역 보정: " + (tc.applied ? "적용됨" : "미적용") + "</div>";
-  if (!p.time) html += "<div class=\"warn\">출생 시간 미상 — 시주를 계산하지 않았습니다.</div>";
-  if (data.needs_confirmation) html += "<div class=\"warn\">출생지(경도) 미입력 — 진태양시 보정이 적용되지 않았습니다.</div>";
-  if (data.boundary_warning) html += "<div class=\"warn\">" + esc(data.boundary_warning.message) + "</div>";
   box.innerHTML = html;
+}
+
+// ---- 무료 사주 요약 화면 ----
+function renderElements(elements) {
+  var wrap = el("div", "fr-elements");
+  var order = ["목", "화", "토", "금", "수"];
+  var max = 1;
+  order.forEach(function (k) { if ((elements[k] || 0) > max) max = elements[k]; });
+  order.forEach(function (k) {
+    var n = elements[k] || 0;
+    var r = el("div", "fr-el-row");
+    r.appendChild(el("span", "fr-el-k", k));
+    var barWrap = el("span", "fr-el-bar");
+    var fill = el("span", "fr-el-fill");
+    fill.style.width = Math.round(n / max * 100) + "%";
+    barWrap.appendChild(fill);
+    r.appendChild(barWrap);
+    r.appendChild(el("span", "fr-el-n", String(n)));
+    wrap.appendChild(r);
+  });
+  return wrap;
+}
+
+function renderFreeResult(saju, ins) {
+  var box = document.getElementById("free-result");
+  box.innerHTML = "";  // 초기화. 이후 모든 동적 값은 textContent 로만 삽입한다.
+
+  var aliasName = (ins.alias && ins.alias.length) ? ins.alias : "당신";
+
+  box.appendChild(el("h3", "fr-title", aliasName + "님의 사주 한 장 요약"));
+  box.appendChild(el("p", "fr-label", ins.reference_label));
+  box.appendChild(el("p", "fr-persona", ins.persona_sentence));
+
+  box.appendChild(el("h4", "fr-h", "타고난 강점"));
+  var ul = el("ul", "fr-strength");
+  ins.strengths.forEach(function (s) { ul.appendChild(el("li", null, s)); });
+  box.appendChild(ul);
+
+  box.appendChild(el("h4", "fr-h", "사람들이 느끼는 모습"));
+  box.appendChild(el("p", "fr-p", ins.others_view));
+
+  box.appendChild(el("h4", "fr-h", "관계 성향"));
+  box.appendChild(el("p", "fr-p", ins.relationship));
+
+  box.appendChild(el("h4", "fr-h", "조심하면 좋은 점"));
+  box.appendChild(el("p", "fr-p", ins.caution));
+
+  box.appendChild(el("h4", "fr-h", "오늘부터 적용할 제안"));
+  box.appendChild(el("p", "fr-p", ins.suggestion));
+
+  if (ins.topic_previews && ins.topic_previews.length) {
+    box.appendChild(el("h4", "fr-h", "관심 주제 미리보기"));
+    ins.topic_previews.forEach(function (tp) {
+      var card = el("div", "fr-topic");
+      card.appendChild(el("div", "fr-topic-name", tp.topic));
+      tp.lines.forEach(function (ln) { card.appendChild(el("p", "fr-p", ln)); });
+      box.appendChild(card);
+    });
+    var lock = el("div", "fr-lock");
+    lock.appendChild(el("span", "fr-lock-ico", "🔒"));
+    lock.appendChild(el("span", "fr-lock-txt", ins.paid_hint));
+    box.appendChild(lock);
+  }
+
+  box.appendChild(el("h4", "fr-h", "사주 명식 (연·월·일·시)"));
+  var ms = el("div", "myeongsik");
+  renderMyeongsikInto(ms, saju);
+  box.appendChild(ms);
+
+  box.appendChild(el("h4", "fr-h", "오행 분포"));
+  box.appendChild(renderElements(ins.elements));
+  box.appendChild(el("p", "fr-note", ins.element_note));
+
+  if (ins.notes && ins.notes.length) {
+    ins.notes.forEach(function (nt) { box.appendChild(el("p", "fr-warn", nt)); });
+  }
+
+  box.appendChild(buildShareArea(ins));
+  box.appendChild(el("p", "fr-disclaimer", ins.disclaimer));
+}
+
+// ---- 공유 카드 (Canvas, 외부 라이브러리 없음, 개인정보 미포함) ----
+function homepageUrl() { return window.location.origin; }
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  var words = String(text).split(" ");
+  var line = "";
+  var lines = [];
+  for (var i = 0; i < words.length; i++) {
+    var test = line ? line + " " + words[i] : words[i];
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line); line = words[i];
+    } else { line = test; }
+  }
+  if (line) lines.push(line);
+  for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], x, y + j * lineHeight);
+  return lines.length;
+}
+
+// 공유 카드에는 persona_title / keywords / 서비스명 / 공개 홈페이지 URL / 안내문구만 그린다.
+// 본명·별칭·생년월일·시간·지역·성별·이메일·명식·질문·주문정보는 절대 포함하지 않는다.
+function drawShareCard(ins) {
+  var c = document.createElement("canvas");
+  c.width = 720; c.height = 1280;
+  var g = c.getContext("2d");
+  var grad = g.createLinearGradient(0, 0, 0, c.height);
+  grad.addColorStop(0, "#5b6ef5"); grad.addColorStop(1, "#8b5bf5");
+  g.fillStyle = grad; g.fillRect(0, 0, c.width, c.height);
+  g.textAlign = "center";
+
+  g.fillStyle = "rgba(255,255,255,.85)";
+  g.font = "600 36px -apple-system, 'Malgun Gothic', sans-serif";
+  g.fillText("나의 사주 키워드", c.width / 2, 170);
+
+  g.fillStyle = "#ffffff";
+  g.font = "800 56px -apple-system, 'Malgun Gothic', sans-serif";
+  wrapText(g, ins.persona_title, c.width / 2, 300, c.width - 120, 70);
+
+  var keywords = ins.keywords || [];
+  var ky = 560;
+  g.font = "700 40px -apple-system, 'Malgun Gothic', sans-serif";
+  for (var i = 0; i < keywords.length; i++) {
+    var text = "# " + keywords[i];
+    var w = g.measureText(text).width + 56;
+    var x = (c.width - w) / 2;
+    var yy = ky + i * 110;
+    g.fillStyle = "rgba(255,255,255,.18)";
+    if (g.roundRect) { g.beginPath(); g.roundRect(x, yy, w, 78, 39); g.fill(); }
+    else { g.fillRect(x, yy, w, 78); }
+    g.fillStyle = "#ffffff";
+    g.fillText(text, c.width / 2, yy + 53);
+  }
+
+  g.fillStyle = "#ffffff";
+  g.font = "700 40px -apple-system, 'Malgun Gothic', sans-serif";
+  g.fillText("당신의 사주 키워드는?", c.width / 2, 1050);
+
+  g.fillStyle = "rgba(255,255,255,.95)";
+  g.font = "700 34px -apple-system, 'Malgun Gothic', sans-serif";
+  g.fillText(SERVICE_NAME, c.width / 2, 1150);
+  g.fillStyle = "rgba(255,255,255,.85)";
+  g.font = "400 26px -apple-system, 'Malgun Gothic', sans-serif";
+  g.fillText(homepageUrl(), c.width / 2, 1195);
+  return c;
+}
+
+function shareStatusEl() { return document.getElementById("share-status"); }
+
+function triggerDownload(url, name) {
+  var a = el("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function saveShareImage(ins) {
+  var c = drawShareCard(ins);
+  var status = shareStatusEl();
+  if (c.toBlob) {
+    c.toBlob(function (blob) {
+      var url = URL.createObjectURL(blob);
+      triggerDownload(url, "saju-keyword.png");
+      if (status) status.textContent = "이미지를 저장했어요.";
+    }, "image/png");
+  } else {
+    triggerDownload(c.toDataURL("image/png"), "saju-keyword.png");
+    if (status) status.textContent = "이미지를 저장했어요.";
+  }
+}
+
+function copyLink() {
+  var status = shareStatusEl();
+  var url = homepageUrl();  // 공개 홈페이지 주소만. 고객정보/명식정보는 넣지 않는다.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function () {
+      if (status) status.textContent = "링크를 복사했어요.";
+    }).catch(function () { fallbackCopy(url, status); });
+  } else { fallbackCopy(url, status); }
+}
+
+function fallbackCopy(text, status) {
+  var ta = el("textarea");
+  ta.value = text; ta.setAttribute("readonly", "");
+  ta.style.position = "absolute"; ta.style.left = "-9999px";
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); if (status) status.textContent = "링크를 복사했어요."; }
+  catch (e) { if (status) status.textContent = text; }
+  document.body.removeChild(ta);
+}
+
+function shareResult(ins) {
+  var status = shareStatusEl();
+  var text = "나의 사주 키워드 — " + ins.persona_title + " | " + SERVICE_NAME;
+  var url = homepageUrl();
+  var c = drawShareCard(ins);
+  if (navigator.share && c.toBlob) {
+    c.toBlob(function (blob) {
+      try {
+        var file = new File([blob], "saju-keyword.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], text: text, url: url }).catch(function () {});
+          return;
+        }
+      } catch (e) { /* File 미지원 → 아래로 */ }
+      navigator.share({ text: text, url: url }).catch(function () { saveShareImage(ins); });
+    }, "image/png");
+  } else if (navigator.share) {
+    navigator.share({ text: text, url: url }).catch(function () { copyLink(); });
+  } else {
+    saveShareImage(ins);  // 공유 미지원 → PNG 저장으로 대체
+  }
+}
+
+function buildShareArea(ins) {
+  var wrap = el("div", "fr-share");
+  wrap.appendChild(el("h4", "fr-h", "결과 공유하기"));
+  wrap.appendChild(el("p", "fr-note", "개인정보 없이 '사주 키워드'만 담은 이미지예요."));
+  var btns = el("div", "fr-share-btns");
+  var bSave = el("button", "btn ghost fr-btn", "결과 이미지 저장");
+  var bShare = el("button", "btn primary fr-btn", "친구에게 공유");
+  var bLink = el("button", "btn ghost fr-btn", "링크 복사");
+  bSave.type = "button"; bShare.type = "button"; bLink.type = "button";
+  bSave.addEventListener("click", function () { saveShareImage(ins); });
+  bShare.addEventListener("click", function () { shareResult(ins); });
+  bLink.addEventListener("click", function () { copyLink(); });
+  btns.appendChild(bSave); btns.appendChild(bShare); btns.appendChild(bLink);
+  wrap.appendChild(btns);
+  var st = el("span", "copy-status");
+  st.id = "share-status";
+  st.setAttribute("aria-live", "polite");
+  wrap.appendChild(st);
+  return wrap;
 }
 
 function syncPaidExtra() {
@@ -201,9 +443,14 @@ function renderProducts() {
       html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
     }
     div.innerHTML = html;
+    // 대표 3개(무료/핵심/전문가)만 우선 표시, 나머지는 '더 보기'로 펼친다. 7개 모두 DOM 유지.
+    if (!REPRESENTATIVE_PRODUCTS[pr.id]) {
+      div.classList.add("product-extra");
+      div.hidden = true;
+    }
     function pick() {
       selectedProduct = pr.id;
-      Array.prototype.forEach.call(box.children, function (c) {
+      Array.prototype.forEach.call(box.querySelectorAll(".product"), function (c) {
         c.classList.remove("selected");
         c.setAttribute("aria-checked", "false");
       });
@@ -218,10 +465,20 @@ function renderProducts() {
     });
     box.appendChild(div);
   });
-  // 초기 선택 반영
-  Array.prototype.forEach.call(box.children, function (c, i) {
+  // 초기 선택 반영(상품 카드만 대상)
+  Array.prototype.forEach.call(box.querySelectorAll(".product"), function (c, i) {
     if (PRODUCTS[i].id === selectedProduct) c.classList.add("selected");
   });
+  // '프리미엄 보고서 더 보기' 토글
+  var toggle = el("button", "btn ghost fr-more", "프리미엄 보고서 더 보기");
+  toggle.type = "button";
+  toggle.addEventListener("click", function () {
+    var extras = box.querySelectorAll(".product-extra");
+    var hide = extras.length && extras[0].hidden === false;  // 현재 펼쳐져 있으면 접는다
+    Array.prototype.forEach.call(extras, function (c) { c.hidden = hide; });
+    toggle.textContent = hide ? "프리미엄 보고서 더 보기" : "간단히 보기";
+  });
+  box.appendChild(toggle);
   syncPaidExtra();
 }
 
@@ -276,12 +533,9 @@ function renderConfirm() {
         "<button type=\"button\" class=\"btn primary\" disabled>결제 기능 준비 중</button>";
     }
   } else {
-    area.innerHTML = "<button type=\"button\" id=\"free-done\" class=\"btn primary\">무료 명식 확인 완료</button>" +
-      "<span id=\"done-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
-    var btn = document.getElementById("free-done");
-    btn.addEventListener("click", function () {
-      document.getElementById("done-status").textContent = "무료 명식을 확인했습니다.";
-    });
+    // 무료: 중복 완료 버튼/문구 없이, 요약 화면으로 안내만 한다.
+    area.innerHTML = "";
+    area.appendChild(el("p", "fr-note", "무료 사주 요약은 '6단계 무료 사주 요약'에서 다시 보고 공유할 수 있어요."));
   }
 }
 
@@ -368,13 +622,25 @@ function fetchJSON(url, payload) {
   }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); });
 }
 
+function freeResultPayload() {
+  var p = basePayload();
+  p.alias = val("alias");
+  p.topics = topicsSelected();
+  return p;
+}
+
 function onEnter(n) {
   if (n === 6) {
-    var box = document.getElementById("myeongsik");
-    box.textContent = "명식 계산 중...";
-    fetchJSON("/saju", basePayload()).then(function (res) {
-      if (res.ok && res.body.status === "ok") { lastSaju = res.body; renderMyeongsik(res.body); }
-      else { box.textContent = res.body.message || "입력을 확인해 주세요."; }
+    var box = document.getElementById("free-result");
+    box.textContent = "결과를 준비하고 있어요...";
+    fetchJSON("/free-insights", freeResultPayload()).then(function (res) {
+      if (res.ok && res.body.status === "ok") {
+        lastSaju = res.body.saju;
+        lastInsight = res.body.insight;
+        renderFreeResult(res.body.saju, res.body.insight);
+      } else {
+        box.textContent = res.body.message || "입력을 확인해 주세요.";
+      }
     }).catch(function () { box.textContent = "오류가 발생했습니다."; });
   } else if (n === 7) {
     renderProducts();

@@ -4,6 +4,7 @@ import unicodedata
 from flask import Flask, request, jsonify, render_template
 
 from saju_engine import compute_saju, SajuInputError
+import saju_insights
 import payments
 
 app = Flask(__name__)
@@ -165,6 +166,42 @@ def saju():
             "message": "사주 계산 중 오류가 발생했습니다.",
         }), 500
     return jsonify(result), 200
+
+
+@app.route('/free-insights', methods=['POST'])
+def free_insights():
+    """무료 사주 요약(명식 + 전통 명리학 관점 해석). 저장·외부호출 없음(결제/DB 미접촉)."""
+    data = request.get_json(silent=True) or {}
+    longitude, bp_error = _extract_longitude(data)
+    if bp_error:
+        return jsonify({"status": "error", "code": "invalid_input", "message": bp_error}), 400
+    try:
+        saju = compute_saju(
+            calendar=data.get('calendar', 'solar'),
+            birth_date=data.get('birth_date'),
+            birth_time=data.get('birth_time'),
+            gender=data.get('gender'),
+            is_leap_month=data.get('is_leap_month', False),
+            longitude=longitude,
+        )
+    except SajuInputError as e:
+        return jsonify({"status": "error", "code": "invalid_input", "message": str(e)}), 400
+    except Exception:
+        return jsonify({
+            "status": "error",
+            "code": "internal_error",
+            "message": "사주 계산 중 오류가 발생했습니다.",
+        }), 500
+
+    alias = _clean_text(data.get('alias'), _LIMITS["alias"])
+    topics_in = data.get('topics', [])
+    if not isinstance(topics_in, list):
+        topics_in = [topics_in]
+    topics = [_clean_text(t, _LIMITS["topic"]) for t in topics_in][:_MAX_TOPICS]
+    topics = [t for t in topics if t]
+
+    insight = saju_insights.build_free_result(saju, alias=alias, topics=topics)
+    return jsonify({"status": "ok", "saju": saju, "insight": insight}), 200
 
 
 @app.route('/report-data', methods=['POST'])
