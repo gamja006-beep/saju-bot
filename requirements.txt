@@ -3,3 +3,5 @@ gunicorn==21.2.0
 lunar_python==1.4.8
 korean_lunar_calendar==0.4.0
 tzdata==2026.5
+cryptography==50.0.2
+psycopg[binary]==3.3.6

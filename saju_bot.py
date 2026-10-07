@@ -4,8 +4,12 @@ import unicodedata
 from flask import Flask, request, jsonify, render_template
 
 from saju_engine import compute_saju, SajuInputError
+import payments
 
 app = Flask(__name__)
+
+# 주문 저장소: 결제 활성 + DATABASE_URL 이면 Postgres, 아니면 In-Memory.
+ORDER_STORE = payments.make_default_store()
 
 # 유료 상품 식별자(서버측 검증용). 실제 결제는 연동하지 않는다(준비 중).
 PRODUCT_IDS = {
@@ -129,7 +133,7 @@ def build_report_data(data):
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html')
+    return render_template('index.html', pay=payments.client_config())
 
 
 @app.route('/health', methods=['GET'])
@@ -177,6 +181,72 @@ def report_data():
             "message": "보고서 자료 생성 중 오류가 발생했습니다.",
         }), 500
     return jsonify({"status": "ok", "report": report}), 200
+
+
+# 상품코드(서버) <-> UI 식별자. UI는 FREE 포함, 주문은 유료만.
+def _consultation_payload(data):
+    """암호화 저장용 상담 자료(이메일 제외). 결제정보와 분리된 상담 스냅샷."""
+    return {
+        "calendar": data.get("calendar"),
+        "birth_date": data.get("birth_date"),
+        "is_leap_month": bool(data.get("is_leap_month", False)),
+        "gender": data.get("gender"),
+        "birth_time": data.get("birth_time"),
+        "birth_place": data.get("birth_place"),
+        "consultation_type": _clean_text(data.get("consultation_type"), 10),
+        "topics": [_clean_text(t, 40) for t in (data.get("topics") or [])][:20],
+        "question": _clean_text(data.get("question"), 2000),
+        "situation": _clean_text(data.get("situation"), 2000),
+        "target_period": _clean_text(data.get("target_period"), 100),
+    }
+
+
+@app.route('/api/orders', methods=['POST'])
+def api_orders():
+    data = request.get_json(silent=True) or {}
+    if not payments.payments_enabled():
+        # 결제 비활성: 주문 생성하지 않음(무료 명식과 분리).
+        return jsonify({"status": "error", "code": "payments_disabled",
+                        "message": "현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다."}), 503
+    try:
+        result = payments.create_order(
+            ORDER_STORE,
+            product_code=data.get("product_code"),
+            email=data.get("email"),
+            consultation_payload=_consultation_payload(data),
+        )
+    except payments.OrderValidationError as e:
+        return jsonify({"status": "error", "code": "invalid_order", "message": str(e)}), 400
+    except payments.PaymentConfigError:
+        return jsonify({"status": "error", "code": "payments_disabled",
+                        "message": "현재 결제 기능 준비 중입니다."}), 503
+    except Exception:
+        return jsonify({"status": "error", "code": "internal_error",
+                        "message": "주문 생성 중 오류가 발생했습니다."}), 500
+    return jsonify({"status": "ok", **result}), 200
+
+
+@app.route('/payment/success', methods=['GET'])
+def payment_success():
+    payment_key = request.args.get("paymentKey")
+    order_id = request.args.get("orderId")
+    amount = request.args.get("amount")
+    try:
+        payments.approve_payment(ORDER_STORE, payment_key, order_id, amount)
+    except (payments.OrderValidationError, payments.PaymentError):
+        return render_template("payment_fail.html",
+                               message="결제를 확인하지 못했습니다. 금액이 차감되지 않았습니다."), 400
+    except Exception:
+        return render_template("payment_fail.html",
+                               message="결제 처리 중 오류가 발생했습니다."), 500
+    return render_template("payment_success.html", mode=payments.payment_mode())
+
+
+@app.route('/payment/fail', methods=['GET'])
+def payment_fail():
+    # 토스가 전달하는 code/message는 그대로 노출하지 않고 일반 안내만 표시.
+    return render_template("payment_fail.html",
+                           message="결제가 취소되었거나 완료되지 않았습니다. 금액은 차감되지 않습니다."), 200
 
 
 if __name__ == "__main__":

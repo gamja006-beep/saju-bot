@@ -154,6 +154,8 @@
       <p id="form-error" class="form-error" aria-live="polite"></p>
     </form>
   </main>
+  <script>window.PAY_CONFIG = {{ pay|tojson }};</script>
+  {% if pay.enabled %}<script src="https://js.tosspayments.com/v2/standard"></script>{% endif %}
   <script src="/static/app.js"></script>
 </body>
 </html>

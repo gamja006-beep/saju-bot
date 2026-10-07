@@ -52,6 +52,27 @@ https://github.com/python/tzdata/blob/master/LICENSE
 
 ---
 
+## cryptography 50.0.2
+
+- Project: https://github.com/pyca/cryptography
+- PyPI: https://pypi.org/project/cryptography/
+- License: Apache License 2.0 OR BSD-3-Clause (dual-licensed)
+- Used for Fernet symmetric encryption of order private data.
+- Transitive: cffi 2.1.1 (MIT), pycparser 3.0 (BSD-3-Clause).
+
+---
+
+## psycopg[binary] 3.3.6
+
+- Project: https://github.com/psycopg/psycopg
+- PyPI: https://pypi.org/project/psycopg/
+- License: GNU LGPL v3.0 (psycopg and psycopg-binary 3.3.6)
+- PostgreSQL client for the planned Railway PostgreSQL order store.
+- The bundled libpq (in psycopg-binary) is under the PostgreSQL License.
+- LGPL is used via dynamic linking; this project does not modify the library.
+
+---
+
 ## korean_lunar_calendar 0.4.0
 
 - Project: https://github.com/usingsky/korean_lunar_calendar_py

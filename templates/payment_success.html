@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>결제 완료</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="app">
+    <div class="step">
+      {% if mode != 'live' %}<p class="paid-notice">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>{% endif %}
+      <h2>결제가 확인되었습니다</h2>
+      <p>보고서는 입력하신 이메일로 발송됩니다. 전화·화상·대면 상담은 제공하지 않습니다.</p>
+      <p><a href="/">처음으로</a></p>
+    </div>
+  </main>
+</body>
+</html>

@@ -17,6 +17,29 @@ if ROOT not in sys.path:
 import saju_engine
 from saju_engine import compute_saju, SajuInputError
 import saju_bot
+import payments
+from cryptography.fernet import Fernet
+
+_FERNET_KEY = Fernet.generate_key().decode("ascii")
+_PAY_ENV_KEYS = ["PAYMENTS_ENABLED", "PAYMENT_MODE", "TOSS_CLIENT_KEY",
+                 "TOSS_SECRET_KEY", "ORDER_ENCRYPTION_KEY", "DATABASE_URL"]
+
+
+def _enable_pay(mode="test"):
+    os.environ["PAYMENTS_ENABLED"] = "true"
+    os.environ["PAYMENT_MODE"] = mode
+    os.environ["TOSS_CLIENT_KEY"] = mode + "_ck_sampleclient"
+    os.environ["TOSS_SECRET_KEY"] = mode + "_sk_samplesecret"
+    os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+
+
+def _clear_pay():
+    for k in _PAY_ENV_KEYS:
+        os.environ.pop(k, None)
+
+
+def _toss_ok(**kw):
+    return {"orderId": kw["order_id"], "totalAmount": kw["amount"], "status": "DONE"}
 
 
 def _is_pillar(p):
@@ -592,6 +615,232 @@ class EmailAndConfirmTest(unittest.TestCase):
         js = self._read("static/app.js")
         self.assertIn("결제 기능 준비 중", js)
         self.assertIn("disabled", js)
+
+
+class PaymentCoreTest(unittest.TestCase):
+    """payments.py 단위 보안 검증(네트워크 mock, In-Memory 저장소)."""
+
+    def setUp(self):
+        _enable_pay("test")
+        self.store = payments.InMemoryOrderStore()
+
+    def tearDown(self):
+        _clear_pay()
+
+    def test_server_price_table(self):
+        self.assertEqual(payments.PRODUCTS["BASIC"]["amount"], 9900)
+        self.assertEqual(payments.PRODUCTS["DEEP"]["amount"], 39000)
+        self.assertEqual(payments.PRODUCTS["EXPERT"]["amount"], 99000)
+        self.assertEqual(payments.PRODUCTS["LIFE_DESIGN"]["amount"], 290000)
+        self.assertEqual(payments.PRODUCTS["RELATION_BUSINESS"]["amount"], 590000)
+        self.assertEqual(payments.PRODUCTS["ANNUAL_VIP"]["amount"], 990000)
+        self.assertNotIn("FREE", payments.PRODUCTS)
+
+    def test_create_order_uses_server_price(self):
+        r = payments.create_order(self.store, "BASIC", "a@b.com", {"q": "x"})
+        self.assertEqual(r["amount"], 9900)  # 클라이언트 금액과 무관
+        self.assertEqual(r["orderName"], "기본 해석")
+        self.assertTrue(r["orderId"].startswith("ord_"))
+
+    def test_free_and_unknown_product_rejected(self):
+        with self.assertRaises(payments.OrderValidationError):
+            payments.create_order(self.store, "FREE", "a@b.com", {})
+        with self.assertRaises(payments.OrderValidationError):
+            payments.create_order(self.store, "GOLD", "a@b.com", {})
+
+    def test_invalid_email_rejected(self):
+        with self.assertRaises(payments.OrderValidationError):
+            payments.create_order(self.store, "BASIC", "not-an-email", {})
+
+    def test_order_id_unpredictable_unique(self):
+        ids = set(payments.generate_order_id() for _ in range(2000))
+        self.assertEqual(len(ids), 2000)
+        self.assertGreaterEqual(len(payments.generate_order_id()), 20)
+
+    def test_private_data_encrypted_no_plaintext(self):
+        payments.create_order(self.store, "EXPERT", "secret@user.com",
+                              {"question": "민감한질문", "birth_date": "1990-05-15"})
+        for rec in self.store.private.values():
+            blob = rec["encrypted_email"] + rec["encrypted_consultation_payload"]
+            self.assertNotIn("secret@user.com", blob)
+            self.assertNotIn("민감한질문", blob)
+            self.assertNotIn("1990-05-15", blob)
+        # 복호화하면 원복
+        pv = list(self.store.private.values())[0]
+        self.assertEqual(payments.decrypt(pv["encrypted_email"]), "secret@user.com")
+
+    def test_disabled_when_env_missing(self):
+        _clear_pay()
+        self.assertFalse(payments.payments_enabled())
+        with self.assertRaises(payments.PaymentConfigError):
+            payments.create_order(self.store, "BASIC", "a@b.com", {})
+
+    def test_mode_key_mix_blocked(self):
+        _enable_pay("test")
+        os.environ["TOSS_SECRET_KEY"] = "live_sk_wrongmode"  # 모드 혼용
+        self.assertFalse(payments.payments_enabled())
+
+    def test_approve_success(self):
+        o = payments.create_order(self.store, "BASIC", "a@b.com", {})
+        res = payments.approve_payment(self.store, "pk_1", o["orderId"], 9900, confirm_fn=_toss_ok)
+        self.assertEqual(res["status"], "PAID")
+        self.assertEqual(self.store.get_order(o["orderId"])["status"], "PAID")
+
+    def test_approve_amount_mismatch_rejected(self):
+        o = payments.create_order(self.store, "BASIC", "a@b.com", {})
+        with self.assertRaises(payments.OrderValidationError):
+            payments.approve_payment(self.store, "pk_1", o["orderId"], 100, confirm_fn=_toss_ok)
+        self.assertNotEqual(self.store.get_order(o["orderId"])["status"], "PAID")
+
+    def test_approve_unknown_order_rejected(self):
+        with self.assertRaises(payments.OrderValidationError):
+            payments.approve_payment(self.store, "pk", "ord_doesnotexist", 9900, confirm_fn=_toss_ok)
+
+    def test_approve_idempotent(self):
+        o = payments.create_order(self.store, "DEEP", "a@b.com", {})
+        payments.approve_payment(self.store, "pk_X", o["orderId"], 39000, confirm_fn=_toss_ok)
+
+        def _boom(**kw):
+            raise AssertionError("toss must not be called again")
+        res2 = payments.approve_payment(self.store, "pk_X", o["orderId"], 39000, confirm_fn=_boom)
+        self.assertTrue(res2.get("idempotent"))
+
+    def test_approve_toss_failure_not_paid(self):
+        o = payments.create_order(self.store, "BASIC", "a@b.com", {})
+
+        def _fail(**kw):
+            raise RuntimeError("toss down")
+        with self.assertRaises(payments.PaymentError):
+            payments.approve_payment(self.store, "pk", o["orderId"], 9900, confirm_fn=_fail)
+        self.assertEqual(self.store.get_order(o["orderId"])["status"], "FAILED")
+
+    def test_approve_timeout_not_paid(self):
+        o = payments.create_order(self.store, "BASIC", "a@b.com", {})
+
+        def _timeout(**kw):
+            raise TimeoutError("timed out")
+        with self.assertRaises(payments.PaymentError):
+            payments.approve_payment(self.store, "pk", o["orderId"], 9900, confirm_fn=_timeout)
+        self.assertEqual(self.store.get_order(o["orderId"])["status"], "FAILED")
+
+    def test_approve_wrong_toss_amount_not_paid(self):
+        o = payments.create_order(self.store, "BASIC", "a@b.com", {})
+
+        def _wrong(**kw):
+            return {"orderId": kw["order_id"], "totalAmount": 1, "status": "DONE"}
+        with self.assertRaises(payments.PaymentError):
+            payments.approve_payment(self.store, "pk", o["orderId"], 9900, confirm_fn=_wrong)
+        self.assertEqual(self.store.get_order(o["orderId"])["status"], "FAILED")
+
+    def test_errors_do_not_leak_keys(self):
+        try:
+            payments.approve_payment(self.store, "pk", "ord_missing", 9900, confirm_fn=_toss_ok)
+        except Exception as e:
+            self.assertNotIn(_FERNET_KEY, str(e))
+            self.assertNotIn("samplesecret", str(e))
+
+    def test_toss_url_is_fixed_https(self):
+        self.assertEqual(payments.TOSS_CONFIRM_URL, "https://api.tosspayments.com/v1/payments/confirm")
+
+    def test_client_config_hides_secrets(self):
+        cfg = payments.client_config()
+        blob = str(cfg)
+        self.assertNotIn("samplesecret", blob)      # secret key 미노출
+        self.assertNotIn(_FERNET_KEY, blob)          # 암호화 키 미노출
+        self.assertIn("clientKey", cfg)
+
+
+class PaymentSqlSafetyTest(unittest.TestCase):
+    def test_postgres_store_parameterized(self):
+        with open(os.path.join(ROOT, "payments.py"), "r", encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("%s", src)  # 파라미터 바인딩 사용
+        # execute 호출에 f-string/%-포매팅으로 값 삽입하지 않음
+        self.assertNotIn('cur.execute(f"', src)
+        self.assertNotIn('cur.execute("SELECT * FROM orders WHERE order_id = \'" +', src)
+
+
+class PaymentEndpointTest(unittest.TestCase):
+    def setUp(self):
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        self.c = saju_bot.app.test_client()
+
+    def tearDown(self):
+        _clear_pay()
+
+    def test_free_flow_no_db_calls(self):
+        _clear_pay()
+        self.c.get("/")
+        self.c.post("/saju", json={"calendar": "solar", "birth_date": "1990-05-15",
+                                   "birth_time": "08:30", "gender": "남"})
+        self.assertEqual(saju_bot.ORDER_STORE.calls, 0)  # 무료 = DB 호출 0회
+
+    def test_orders_disabled_returns_503(self):
+        _clear_pay()
+        r = self.c.post("/api/orders", json={"product_code": "BASIC", "email": "a@b.com"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(saju_bot.ORDER_STORE.calls, 0)
+
+    def test_orders_enabled_creates_order(self):
+        _enable_pay("test")
+        r = self.c.post("/api/orders", json={
+            "product_code": "EXPERT", "email": "a@b.com",
+            "birth_date": "1990-05-15", "question": "x"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["amount"], 99000)
+        self.assertTrue(body["orderId"].startswith("ord_"))
+
+    def test_orders_forged_amount_ignored(self):
+        _enable_pay("test")
+        r = self.c.post("/api/orders", json={
+            "product_code": "BASIC", "email": "a@b.com", "amount": 1})
+        self.assertEqual(r.get_json()["amount"], 9900)
+
+    def test_orders_bad_product_400(self):
+        _enable_pay("test")
+        r = self.c.post("/api/orders", json={"product_code": "FREE", "email": "a@b.com"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_payment_success_mismatch_shows_fail(self):
+        _enable_pay("test")
+        o = payments.create_order(saju_bot.ORDER_STORE, "BASIC", "a@b.com", {})
+        r = self.c.get("/payment/success?paymentKey=pk&orderId=%s&amount=1" % o["orderId"])
+        self.assertEqual(r.status_code, 400)
+        body = r.get_data(as_text=True)
+        self.assertNotIn("samplesecret", body)
+
+    def test_payment_fail_page_safe(self):
+        r = self.c.get("/payment/fail?code=X&message=<script>")
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertNotIn("<script>", body)  # 자동 이스케이프 / 미반영
+
+
+class PaymentUITest(unittest.TestCase):
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_toss_sdk_only_when_enabled(self):
+        html = self._read("templates/index.html")
+        self.assertIn("{% if pay.enabled %}", html)
+        self.assertIn("js.tosspayments.com/v2/standard", html)
+        self.assertIn("window.PAY_CONFIG", html)
+
+    def test_js_guards_payment_behind_config(self):
+        js = self._read("static/app.js")
+        self.assertIn("PAY_CONFIG", js)
+        self.assertIn("ANONYMOUS", js)
+        self.assertIn("/payment/success", js)
+        self.assertIn("/payment/fail", js)
+        self.assertIn("결제 기능 준비 중", js)   # 비활성 기본
+        self.assertIn("테스트 결제하기", js)       # 활성 시에만
+
+    def test_no_amount_deduction_claim(self):
+        blob = self._read("static/app.js") + self._read("templates/payment_success.html")
+        self.assertIn("실제 금액은 차감되지 않습니다", blob)
+        self.assertNotIn("금액이 차감됩니다", blob)
 
 
 if __name__ == "__main__":

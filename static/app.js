@@ -31,6 +31,12 @@ var PRODUCTS = [
   { id: "vip_990000", name: "연간 VIP", price: "990,000원", kind: "ai", desc: "연간·분기별 이메일 보고서.", method: "이메일", eta: "연간·분기별" }
 ];
 
+// UI 상품 id -> 서버 상품 코드(정본). FREE는 주문 불가.
+var PRODUCT_CODE = {
+  basic_9900: "BASIC", deep_39000: "DEEP", expert_99000: "EXPERT",
+  life_290000: "LIFE_DESIGN", relation_590000: "RELATION_BUSINESS", vip_990000: "ANNUAL_VIP"
+};
+
 var TOTAL_STEPS = 8;
 var current = 1;
 var lastSaju = null;
@@ -256,9 +262,19 @@ function renderConfirm() {
 
   // 완료 영역
   var area = document.getElementById("complete-area");
+  var payCfg = window.PAY_CONFIG || { enabled: false, mode: "test" };
   if (isPaid(selectedProduct)) {
-    area.innerHTML = "<p class=\"paid-notice\">현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다.</p>" +
-      "<button type=\"button\" class=\"btn primary\" disabled>결제 기능 준비 중</button>";
+    if (payCfg.enabled) {
+      var banner = payCfg.mode !== "live"
+        ? "<p class=\"paid-notice\">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>" : "";
+      area.innerHTML = banner +
+        "<button type=\"button\" id=\"test-pay\" class=\"btn primary\">테스트 결제하기</button>" +
+        "<span id=\"pay-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
+      document.getElementById("test-pay").addEventListener("click", startPayment);
+    } else {
+      area.innerHTML = "<p class=\"paid-notice\">현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다.</p>" +
+        "<button type=\"button\" class=\"btn primary\" disabled>결제 기능 준비 중</button>";
+    }
   } else {
     area.innerHTML = "<button type=\"button\" id=\"free-done\" class=\"btn primary\">무료 명식 확인 완료</button>" +
       "<span id=\"done-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
@@ -267,6 +283,46 @@ function renderConfirm() {
       document.getElementById("done-status").textContent = "무료 명식을 확인했습니다.";
     });
   }
+}
+
+function orderPayload() {
+  var p = basePayload();
+  p.product_code = PRODUCT_CODE[selectedProduct] || "";
+  p.email = emailValue();
+  p.consultation_type = checked("consultation_type");
+  p.topics = topicsSelected();
+  p.question = val("question");
+  p.situation = val("situation");
+  p.target_period = val("target_period");
+  return p;
+}
+
+// 결제 활성 환경(테스트)에서만 호출된다. 토스 SDK v2 결제창형, 비회원 ANONYMOUS.
+function startPayment() {
+  var status = document.getElementById("pay-status");
+  status.textContent = "주문 생성 중...";
+  fetchJSON("/api/orders", orderPayload()).then(function (res) {
+    if (!res.ok || res.body.status !== "ok") {
+      status.textContent = res.body.message || "주문을 생성하지 못했습니다.";
+      return;
+    }
+    var o = res.body;
+    if (typeof TossPayments === "undefined") { status.textContent = "결제 모듈을 불러오지 못했습니다."; return; }
+    try {
+      var tp = TossPayments(window.PAY_CONFIG.clientKey);
+      var payment = tp.payment({ customerKey: TossPayments.ANONYMOUS });
+      payment.requestPayment({
+        method: "CARD",
+        amount: { currency: "KRW", value: o.amount },
+        orderId: o.orderId,
+        orderName: o.orderName,
+        successUrl: window.location.origin + "/payment/success",
+        failUrl: window.location.origin + "/payment/fail"
+      });
+    } catch (e) {
+      status.textContent = "결제를 시작하지 못했습니다.";
+    }
+  }).catch(function () { status.textContent = "오류가 발생했습니다."; });
 }
 
 function validateStep(n) {
