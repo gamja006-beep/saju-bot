@@ -219,17 +219,49 @@ class AdminViewerTest(unittest.TestCase):
             self.assertNotIn("<img", low)  # 외부 이미지 없음
 
     def test_admin_html_no_browser_storage(self):
+        # 복사 버튼용 인라인 스크립트는 허용하되, 개인정보를 브라우저에 저장하지 않는다.
         for tpl in ("admin_orders.html", "admin_order_detail.html"):
             with open(os.path.join(ROOT, "templates", tpl), "r", encoding="utf-8") as f:
                 html = f.read()
             self.assertNotIn("localStorage", html)
             self.assertNotIn("sessionStorage", html)
-            self.assertNotIn("<script", html)  # 상세 개인정보를 다루는 스크립트 없음
+            self.assertNotIn("document.cookie", html)
+        # 목록 페이지는 스크립트가 필요 없다.
+        with open(os.path.join(ROOT, "templates", "admin_orders.html"), "r", encoding="utf-8") as f:
+            self.assertNotIn("<script", f.read())
 
     def test_auth_uses_compare_digest(self):
         with open(os.path.join(ROOT, "admin.py"), "r", encoding="utf-8") as f:
             src = f.read()
         self.assertIn("secrets.compare_digest", src)
+
+    # ---- 목록 -> 상세 링크 / 상세 복사 ----
+    def test_list_has_detail_link_and_cta(self):
+        oid = self._make_paid()
+        body = self.c.get("/admin/orders", headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn('href="/admin/orders/%s"' % oid, body)
+        self.assertIn("상세 보기", body)
+
+    def test_detail_has_copy_button_scoped_to_consultation(self):
+        oid = self._make_paid()
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("보고서 자료 복사", body)
+        self.assertIn('id="copy-report"', body)
+        self.assertIn('id="admin-consultation"', body)
+        self.assertIn('getElementById("admin-consultation")', body)  # 복사 소스 한정
+
+    def test_copy_report_source_excludes_forbidden_fields(self):
+        oid = self._make_paid(
+            email="customer@example.com",
+            payload={"consultation_type": "종합", "birth_date": "1990-05-15",
+                     "question": "상담 질문입니다", "topics": ["직업"]},
+            pk="pk_secret_value")
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        # 상담자료는 표시되지만 금지 필드는 페이지(=복사 대상) 어디에도 없다.
+        self.assertIn("상담 질문입니다", body)
+        for bad in ["pk_secret_value", "payment_key", "encrypted_", "encrypted_email",
+                    _ADMIN_PW, _FERNET_KEY, "samplesecret", "DATABASE_URL"]:
+            self.assertNotIn(bad, body)
 
     def test_admin_not_linked_from_customer_ui(self):
         with open(os.path.join(ROOT, "templates", "index.html"), "r", encoding="utf-8") as f:

@@ -12,8 +12,43 @@
       {% if mode != 'live' %}<p class="paid-notice">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>{% endif %}
       <h2>결제가 확인되었습니다</h2>
       <p>보고서는 입력하신 이메일로 발송됩니다. 전화·화상·대면 상담은 제공하지 않습니다.</p>
-      <p><a href="/">처음으로</a></p>
+      {% if order_id %}
+      <div class="summary" style="margin-top:14px;">
+        <div class="srow">
+          <span class="sk">문의용 주문번호</span>
+          <span class="sv" id="order-id">{{ order_id }}</span>
+        </div>
+      </div>
+      <p class="hint">문의 시 이 주문번호를 알려 주세요.</p>
+      <button type="button" id="copy-order" class="btn ghost" style="min-height:48px;">주문번호 복사</button>
+      <span id="copy-status" class="copy-status" aria-live="polite"></span>
+      {% endif %}
+      <p style="margin-top:16px;"><a href="/">처음으로</a></p>
     </div>
   </main>
+  <script>
+  (function () {
+    var btn = document.getElementById("copy-order");
+    if (!btn) return;
+    function fallback(text, status, done) {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", "");
+      ta.style.position = "absolute"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); }
+      catch (e) { if (status) status.textContent = text; }
+      document.body.removeChild(ta);
+    }
+    btn.addEventListener("click", function () {
+      var el = document.getElementById("order-id");
+      var status = document.getElementById("copy-status");
+      var text = el ? el.textContent : "";  // 주문번호만. paymentKey/이메일/내부값 없음.
+      function done() { if (status) status.textContent = "주문번호를 복사했어요."; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, status, done); });
+      } else { fallback(text, status, done); }
+    });
+  })();
+  </script>
 </body>
 </html>

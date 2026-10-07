@@ -1145,6 +1145,48 @@ class ShareCardPrivacyTest(unittest.TestCase):
         self.assertNotIn("sessionStorage", js)
 
 
+class PaymentSuccessOrderNumberTest(unittest.TestCase):
+    """결제 성공 화면에 문의용 주문번호 표시(paymentKey/이메일/내부값 비노출)."""
+
+    def setUp(self):
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        self.c = saju_bot.app.test_client()
+
+    def test_success_shows_order_number_not_paymentkey(self):
+        saved = payments.approve_payment
+        payments.approve_payment = lambda store, pk, oid, amt: {"status": "PAID", "orderId": oid, "idempotent": False}
+        try:
+            r = self.c.get("/payment/success?orderId=ord_testABC123&paymentKey=pk_secret_xyz&amount=9900")
+        finally:
+            payments.approve_payment = saved
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("ord_testABC123", body)   # 문의용 주문번호
+        self.assertIn("주문번호 복사", body)        # 복사 버튼
+        self.assertNotIn("pk_secret_xyz", body)  # paymentKey 미표시
+
+    def test_success_order_number_xss_escaped(self):
+        saved = payments.approve_payment
+        payments.approve_payment = lambda *a, **k: {"status": "PAID", "orderId": "<script>alert(1)</script>"}
+        try:
+            r = self.c.get("/payment/success?orderId=x&paymentKey=p&amount=1")
+        finally:
+            payments.approve_payment = saved
+        body = r.get_data(as_text=True)
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertIn("&lt;script&gt;", body)
+
+    def test_success_mismatch_still_fails(self):
+        # 기존 승인 로직 회귀: 금액 불일치는 여전히 결제 실패 화면.
+        _enable_pay("test")
+        try:
+            o = payments.create_order(saju_bot.ORDER_STORE, "BASIC", "a@b.com", {})
+            r = self.c.get("/payment/success?paymentKey=pk&orderId=%s&amount=1" % o["orderId"])
+        finally:
+            _clear_pay()
+        self.assertEqual(r.status_code, 400)
+
+
 class MobileUXTest(unittest.TestCase):
     def _read(self, rel):
         with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:

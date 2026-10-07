@@ -273,14 +273,16 @@ def payment_success():
     order_id = request.args.get("orderId")
     amount = request.args.get("amount")
     try:
-        payments.approve_payment(ORDER_STORE, payment_key, order_id, amount)
+        approval = payments.approve_payment(ORDER_STORE, payment_key, order_id, amount)
     except (payments.OrderValidationError, payments.PaymentError):
         return render_template("payment_fail.html",
                                message="결제를 확인하지 못했습니다. 금액이 차감되지 않았습니다."), 400
     except Exception:
         return render_template("payment_fail.html",
                                message="결제 처리 중 오류가 발생했습니다."), 500
-    return render_template("payment_success.html", mode=payments.payment_mode())
+    # 고객 문의용 주문번호만 노출(paymentKey/이메일/내부값 비노출).
+    return render_template("payment_success.html", mode=payments.payment_mode(),
+                           order_id=approval.get("orderId"))
 
 
 @app.route('/payment/fail', methods=['GET'])

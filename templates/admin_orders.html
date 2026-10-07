@@ -22,6 +22,7 @@
         <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
         <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
         <div class="srow"><span class="sk">이메일</span><span class="sv">{{ o.email_masked }}</span></div>
+        <div class="srow"><span class="sk">상세</span><span class="sv admin-more">상세 보기 →</span></div>
       </div>
     </a>
     {% endfor %}
