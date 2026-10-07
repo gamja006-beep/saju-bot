@@ -29,8 +29,12 @@
       <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
       {% endfor %}
     </div>
-    <button type="button" id="copy-report" class="btn ghost" style="min-height:48px;margin-top:10px;">보고서 자료 복사</button>
-    <span id="copy-status" class="copy-status" aria-live="polite"></span>
+    {% if o.consultation %}
+    <div class="admin-actions">
+      <button type="button" id="copy-report" class="btn primary admin-copy">보고서 자료 복사</button>
+      <span id="copy-status" class="copy-status" aria-live="polite"></span>
+    </div>
+    {% endif %}
 
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
   </main>

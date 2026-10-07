@@ -263,6 +263,30 @@ class AdminViewerTest(unittest.TestCase):
                     _ADMIN_PW, _FERNET_KEY, "samplesecret", "DATABASE_URL"]:
             self.assertNotIn(bad, body)
 
+    def test_copy_button_visible_below_consultation(self):
+        oid = self._make_paid()  # 상담 내용 존재
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn('id="copy-report"', body)
+        self.assertIn("admin-copy", body)  # 전폭·고대비 버튼
+        # 위치: 상담 카드(#admin-consultation) 아래, 목록 링크 위
+        self.assertLess(body.index('id="admin-consultation"'), body.index('id="copy-report"'))
+        self.assertLess(body.index('id="copy-report"'), body.index("admin-back"))
+
+    def test_copy_button_shown_even_minimal_payload(self):
+        # PAID 주문은 최소한 '태어난 시간' 등 기본 상담 항목이 항상 존재 -> 버튼 항상 표시.
+        oid = self._make_paid(payload={"unused_field": "x"})
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn('id="copy-report"', body)
+
+    def test_copy_button_min_height_48(self):
+        import re
+        with open(os.path.join(ROOT, "static", "app.css"), "r", encoding="utf-8") as f:
+            css = f.read()
+        m = re.search(r"\.admin-copy\s*\{[^}]*\}", css)
+        self.assertIsNotNone(m)
+        self.assertIn("min-height: 48px", m.group(0))
+        self.assertIn("width: 100%", m.group(0))
+
     def test_admin_not_linked_from_customer_ui(self):
         with open(os.path.join(ROOT, "templates", "index.html"), "r", encoding="utf-8") as f:
             html = f.read()
