@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["python", "saju_bot.py"]
+CMD ["sh", "-c", "exec gunicorn saju_bot:app --bind 0.0.0.0:$PORT"]
