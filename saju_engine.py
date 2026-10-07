@@ -20,6 +20,8 @@ import datetime
 from lunar_python import Solar
 from korean_lunar_calendar import KoreanLunarCalendar
 
+from saju_time import compute_true_solar, TimeCorrectionError, LONGITUDE_MIN, LONGITUDE_MAX
+
 SUPPORTED_YEAR_MIN = 1900
 
 # 자시(子時) 규칙: sect=2 는 자정(00:00) 기준 일자 전환(기본값), sect=1 은 23:00 전환.
@@ -108,7 +110,8 @@ def _korean_lunar_from_solar(ys, ms, ds):
     return cal.lunarYear, cal.lunarMonth, cal.lunarDay, bool(cal.isIntercalation)
 
 
-def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None, is_leap_month=False):
+def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None,
+                 is_leap_month=False, longitude=None):
     """사주 4주를 계산해 dict로 반환한다. 입력 오류는 SajuInputError를 던진다.
 
     한국 양력<->음력 변환은 KoreanLunarCalendar(KASI 기준)만 사용하고,
@@ -155,8 +158,32 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
     if solar_date > datetime.date.today():
         raise SajuInputError("미래 날짜는 입력할 수 없습니다.")
 
-    # 사주 4주: 확정된 양력 날짜를 lunar_python 엔진에 투입(한국 음력 변환에는 쓰지 않음)
-    ec = Solar.fromYmdHms(solar_y, solar_m, solar_d, hour, minute, 0).getLunar().getEightChar()
+    # 진태양시 보정: 출생시간과 경도가 모두 있으면 보정된 시각으로 4주를 계산한다.
+    # 보정은 사주 pillar 계산에만 적용하며, 위의 한국 음력 표시값은 바꾸지 않는다.
+    eff_y, eff_m, eff_d = solar_y, solar_m, solar_d
+    eff_hour, eff_minute, eff_second = hour, minute, 0
+    time_correction = {"applied": False, "method": "none(wall-clock)"}
+    needs_confirmation = False
+
+    if has_time and longitude is not None:
+        if not isinstance(longitude, (int, float)) or isinstance(longitude, bool):
+            raise SajuInputError("longitude는 숫자여야 합니다.")
+        if not (LONGITUDE_MIN <= longitude <= LONGITUDE_MAX):
+            raise SajuInputError("경도는 %.1f~%.1f 범위여야 합니다." % (LONGITUDE_MIN, LONGITUDE_MAX))
+        try:
+            tc = compute_true_solar(datetime.date(solar_y, solar_m, solar_d), hour, minute, float(longitude))
+        except TimeCorrectionError as e:
+            raise SajuInputError(str(e))
+        ts = tc.pop("_true_solar_dt")
+        eff_y, eff_m, eff_d = ts.year, ts.month, ts.day
+        eff_hour, eff_minute, eff_second = ts.hour, ts.minute, ts.second
+        time_correction = tc
+    elif has_time and longitude is None:
+        # 경도 미입력: 벽시계 기준 계산을 유지하되 미보정임을 알린다.
+        needs_confirmation = True
+
+    # 사주 4주: 확정된(필요 시 보정된) 양력 시각을 lunar_python 엔진에 투입
+    ec = Solar.fromYmdHms(eff_y, eff_m, eff_d, eff_hour, eff_minute, eff_second).getLunar().getEightChar()
     ec.setSect(DEFAULT_SECT)
 
     pillars = {
@@ -167,7 +194,7 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
     }
 
     boundary_warning = None
-    if has_time and hour == 23:
+    if has_time and eff_hour == 23:
         ec.setSect(1)
         sect1 = _day_time(ec)
         ec.setSect(2)
@@ -214,17 +241,21 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
         },
         "sect": DEFAULT_SECT,
         "convention": {
-            "timezone": "KST-wallclock",
-            "longitude_correction": False,
-            "historical_std_time": False,
-            "dst": False,
+            "timezone": "Asia/Seoul" if time_correction.get("applied") else "KST-wallclock",
+            "longitude_correction": bool(time_correction.get("applied")),
+            "historical_std_time": bool(time_correction.get("applied")),
+            "dst": bool(time_correction.get("applied")),
             "zi_rule": "sect=2(00:00)",
         },
+        "time_correction": time_correction,
+        "needs_confirmation": needs_confirmation,
         "pillars": pillars,
         "boundary_warning": boundary_warning,
         "accuracy_note": (
-            "한국 음력 변환은 KASI 기준으로 교정됨. 단 진태양시·지역 경도·과거 표준시·"
-            "서머타임(DST) 보정은 미적용으로, 전체 정확성은 아직 검증되지 않았습니다."
+            "한국 음력 변환은 KASI 기준. 진태양시 보정 "
+            + ("적용됨(경도+표준시/DST+균시차). " if time_correction.get("applied")
+               else "미적용(경도 미입력 시 벽시계 기준). ")
+            + "전체 정확성은 독립 기준 교차검증 전까지 확정되지 않았습니다."
         ),
     }
 

@@ -162,7 +162,7 @@ class FlaskRegressionTest(unittest.TestCase):
 class SecurityStaticScanTest(unittest.TestCase):
     """AST 기반 정적 검사. 주석/docstring 안의 단어가 아니라 실제 import/호출만 본다."""
 
-    FILES = ["saju_engine.py", "saju_bot.py"]
+    FILES = ["saju_engine.py", "saju_bot.py", "saju_time.py"]
     FORBIDDEN_IMPORTS = {"subprocess", "pickle", "socket", "requests", "urllib",
                          "http", "ctypes", "anthropic", "openai", "httpx", "aiohttp"}
     FORBIDDEN_CALLS = {"eval", "exec", "compile", "__import__"}
@@ -284,6 +284,122 @@ class KoreanLunarFixTest(unittest.TestCase):
     def test_before_1900_rejected(self):
         with self.assertRaises(SajuInputError):
             compute_saju("solar", "1899-12-31", "08:30", "남")
+
+
+class TrueSolarCorrectionTest(unittest.TestCase):
+    """Phase 2B: 진태양시(경도+역사 표준시/DST+균시차) 보정 회귀.
+
+    주의: 기준값은 과제 제공값이며, 계산 결과에 맞춰 바꾸지 않는다.
+    CASE2 월주는 1987 서머타임 적용 여부로 기준 간 불일치가 있어 단정하지 않는다.
+    """
+
+    def _gz(self, r):
+        p = r["pillars"]
+        return (p["year"]["ganzhi"], p["month"]["ganzhi"], p["day"]["ganzhi"],
+                p["time"]["ganzhi"] if p["time"] else None)
+
+    def test_case1_full(self):
+        r = compute_saju("solar", "2012-02-04", "19:23", "남", longitude=126.978)
+        self.assertEqual(self._gz(r), ("壬辰", "壬寅", "乙未", "乙酉"))
+        self.assertTrue(r["time_correction"]["applied"])
+        self.assertEqual(r["time_correction"]["standard_meridian"], 135.0)
+
+    def test_case2_year_day_hour(self):
+        # 월주는 서머타임 처리 차이로 기준 불일치 -> 단정하지 않음
+        r = compute_saju("lunar", "1987-05-10", "14:33", "남", is_leap_month=False, longitude=128.5918)
+        p = r["pillars"]
+        self.assertEqual(p["year"]["ganzhi"], "丁卯")
+        self.assertEqual(p["day"]["ganzhi"], "丙戌")
+        self.assertEqual(p["time"]["ganzhi"], "乙未")
+        self.assertEqual(r["time_correction"]["dst_minutes"], 60.0)  # 1987 서머타임 적용
+
+    def test_case3_hour_and_historical_stdtime(self):
+        r = compute_saju("solar", "1958-08-08", "09:52", "남", longitude=126.978)
+        self.assertEqual(r["pillars"]["time"]["ganzhi"], "甲辰")  # 과제 요구 후보
+        self.assertEqual(r["pillars"]["day"]["ganzhi"], "丁巳")
+        # 1958: UTC+8:30 표준시(127.5°E) + 당시 서머타임
+        self.assertEqual(r["time_correction"]["standard_meridian"], 127.5)
+        self.assertEqual(r["time_correction"]["dst_minutes"], 60.0)
+
+    def test_case4_full_and_date_rollover(self):
+        r = compute_saju("lunar", "1976-12-20", "00:38", "남", is_leap_month=False, longitude=127.148)
+        self.assertEqual(self._gz(r), ("丁巳", "壬寅", "甲午", "丙子"))
+        # 보정 후 전날(1977-02-06)로 날짜 이동
+        self.assertTrue(r["time_correction"]["true_solar_local"].startswith("1977-02-06"))
+        self.assertIsNotNone(r["boundary_warning"])  # 보정 후 23시대
+
+    def test_case5_full(self):
+        r = compute_saju("solar", "1994-01-17", "15:41", "남", longitude=126.978)
+        self.assertEqual(self._gz(r), ("癸酉", "乙丑", "癸卯", "己未"))
+
+    def test_no_region_wall_clock_with_warning(self):
+        r = compute_saju("solar", "2012-02-04", "19:23", "남")
+        self.assertFalse(r["time_correction"]["applied"])
+        self.assertTrue(r["needs_confirmation"])
+
+    def test_no_time_no_correction(self):
+        r = compute_saju("solar", "2012-02-04", None, "남", longitude=126.978)
+        self.assertIsNone(r["pillars"]["time"])
+        self.assertFalse(r["time_correction"]["applied"])
+        self.assertFalse(r["needs_confirmation"])
+
+    def test_longitude_bounds_ok(self):
+        for lon in (124.0, 132.0):
+            r = compute_saju("solar", "2000-01-01", "12:00", "남", longitude=lon)
+            self.assertTrue(r["time_correction"]["applied"])
+
+    def test_longitude_out_of_range(self):
+        for lon in (123.9, 132.1):
+            with self.assertRaises(SajuInputError):
+                compute_saju("solar", "2000-01-01", "12:00", "남", longitude=lon)
+
+    def test_modern_kst_meridian(self):
+        r = compute_saju("solar", "2000-06-01", "12:00", "남", longitude=126.978)
+        self.assertEqual(r["time_correction"]["standard_meridian"], 135.0)
+        self.assertEqual(r["time_correction"]["dst_minutes"], 0.0)
+
+    def test_1987_vs_1986_dst(self):
+        on = compute_saju("solar", "1987-07-01", "12:00", "남", longitude=126.978)
+        off = compute_saju("solar", "1986-07-01", "12:00", "남", longitude=126.978)
+        self.assertEqual(on["time_correction"]["dst_minutes"], 60.0)
+        self.assertEqual(off["time_correction"]["dst_minutes"], 0.0)
+
+
+class Phase2BFlaskTest(unittest.TestCase):
+    def setUp(self):
+        self.c = saju_bot.app.test_client()
+
+    def test_health_unchanged(self):
+        r = self.c.get("/health")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"status": "ok"})
+
+    def test_saju_with_birth_place_ok(self):
+        r = self.c.post("/saju", json={
+            "calendar": "solar", "birth_date": "2012-02-04", "birth_time": "19:23",
+            "gender": "남", "birth_place": {"country": "KR", "city": "서울", "longitude": 126.978}})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data["status"], "ok")
+        self.assertTrue(data["time_correction"]["applied"])
+
+    def test_foreign_country_400(self):
+        r = self.c.post("/saju", json={
+            "calendar": "solar", "birth_date": "2012-02-04", "birth_time": "19:23",
+            "gender": "남", "birth_place": {"country": "JP", "longitude": 139.7}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_bad_longitude_400(self):
+        r = self.c.post("/saju", json={
+            "calendar": "solar", "birth_date": "2012-02-04", "birth_time": "19:23",
+            "gender": "남", "birth_place": {"country": "KR", "longitude": 150.0}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_no_birth_place_still_ok(self):
+        r = self.c.post("/saju", json={
+            "calendar": "solar", "birth_date": "2012-02-04", "birth_time": "19:23", "gender": "남"})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()["needs_confirmation"])
 
 
 if __name__ == "__main__":

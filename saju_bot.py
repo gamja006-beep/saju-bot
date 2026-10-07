@@ -195,9 +195,25 @@ def health():
     return jsonify({"status": "ok"})
 
 
+def _extract_longitude(data):
+    """선택 입력 birth_place에서 경도를 꺼낸다. (longitude 또는 None, error_message 또는 None)."""
+    bp = data.get('birth_place')
+    if bp is None:
+        return None, None
+    if not isinstance(bp, dict):
+        return None, "birth_place는 객체여야 합니다."
+    country = bp.get('country', 'KR')
+    if country != 'KR':
+        return None, "현재 대한민국(KR)만 지원합니다."
+    return bp.get('longitude'), None
+
+
 @app.route('/saju', methods=['POST'])
 def saju():
     data = request.get_json(silent=True) or {}
+    longitude, bp_error = _extract_longitude(data)
+    if bp_error:
+        return jsonify({"status": "error", "code": "invalid_input", "message": bp_error}), 400
     try:
         result = compute_saju(
             calendar=data.get('calendar', 'solar'),
@@ -205,6 +221,7 @@ def saju():
             birth_time=data.get('birth_time'),
             gender=data.get('gender'),
             is_leap_month=data.get('is_leap_month', False),
+            longitude=longitude,
         )
     except SajuInputError as e:
         return jsonify({"status": "error", "code": "invalid_input", "message": str(e)}), 400

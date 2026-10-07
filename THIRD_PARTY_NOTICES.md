@@ -38,6 +38,20 @@ SOFTWARE.
 
 ---
 
+## tzdata 2026.5
+
+- Project: https://github.com/python/tzdata
+- PyPI: https://pypi.org/project/tzdata/
+- License: Apache License 2.0 (packaging); bundled IANA time zone data is public domain
+- Copyright: Python Software Foundation and contributors
+
+This package provides the IANA time zone database consumed by the standard
+library `zoneinfo` module. It is distributed under the Apache License 2.0;
+the underlying tz database itself is in the public domain. Full license text:
+https://github.com/python/tzdata/blob/master/LICENSE
+
+---
+
 ## korean_lunar_calendar 0.4.0
 
 - Project: https://github.com/usingsky/korean_lunar_calendar_py
