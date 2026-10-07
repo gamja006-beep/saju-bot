@@ -163,6 +163,74 @@ class AdminViewerTest(unittest.TestCase):
             self.assertNotIn("samplesecret", body)   # TOSS_SECRET_KEY
             self.assertNotIn("DATABASE_URL", body)
 
+    # ---- 캐시·참조·프레임 방어 헤더 ----
+    def _assert_all_headers(self, resp):
+        expected = {
+            "Cache-Control": "no-store, private, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Robots-Tag": "noindex, nofollow, noarchive",
+            "Referrer-Policy": "no-referrer",
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+        }
+        for k, v in expected.items():
+            self.assertEqual(resp.headers.get(k), v, k)
+
+    def test_headers_on_list(self):
+        self._make_paid()
+        r = self.c.get("/admin/orders", headers=_auth(_ADMIN_USER, _ADMIN_PW))
+        self.assertEqual(r.status_code, 200)
+        self._assert_all_headers(r)
+
+    def test_headers_on_detail_no_store(self):
+        oid = self._make_paid()
+        r = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW))
+        self.assertEqual(r.status_code, 200)
+        self._assert_all_headers(r)
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+
+    def test_headers_on_401(self):
+        r = self.c.get("/admin/orders")  # 인증 없음 -> 401
+        self.assertEqual(r.status_code, 401)
+        self._assert_all_headers(r)  # 401 에도 캐시 금지 등 적용
+
+    def test_headers_on_404_detail(self):
+        pending = self._make_pending()
+        r = self.c.get("/admin/orders/%s" % pending, headers=_auth(_ADMIN_USER, _ADMIN_PW))
+        self.assertEqual(r.status_code, 404)
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+
+    def test_customer_pages_unaffected_by_admin_headers(self):
+        # 고객/결제/무료 명식 응답에는 관리자 방어 헤더가 붙지 않는다(블루프린트 범위 밖).
+        for path in ("/", "/health"):
+            r = self.c.get(path)
+            self.assertNotEqual(r.headers.get("Cache-Control"), "no-store, private, max-age=0")
+            self.assertIsNone(r.headers.get("X-Frame-Options"))
+
+    def test_admin_html_no_external_resources(self):
+        for tpl in ("admin_orders.html", "admin_order_detail.html"):
+            with open(os.path.join(ROOT, "templates", tpl), "r", encoding="utf-8") as f:
+                html = f.read()
+            low = html.lower()
+            self.assertNotIn("http://", low)
+            self.assertNotIn("https://", low)
+            self.assertNotIn("cdn", low)
+            self.assertNotIn("<img", low)  # 외부 이미지 없음
+
+    def test_admin_html_no_browser_storage(self):
+        for tpl in ("admin_orders.html", "admin_order_detail.html"):
+            with open(os.path.join(ROOT, "templates", tpl), "r", encoding="utf-8") as f:
+                html = f.read()
+            self.assertNotIn("localStorage", html)
+            self.assertNotIn("sessionStorage", html)
+            self.assertNotIn("<script", html)  # 상세 개인정보를 다루는 스크립트 없음
+
+    def test_auth_uses_compare_digest(self):
+        with open(os.path.join(ROOT, "admin.py"), "r", encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("secrets.compare_digest", src)
+
     def test_admin_not_linked_from_customer_ui(self):
         with open(os.path.join(ROOT, "templates", "index.html"), "r", encoding="utf-8") as f:
             html = f.read()

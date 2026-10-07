@@ -26,8 +26,28 @@ import payments
 
 admin_bp = Blueprint("admin", __name__)
 
-_NOINDEX = "noindex, nofollow"
+_NOINDEX = "noindex, nofollow, noarchive"
 _MAX_LIST = 100
+
+# 관리자 개인정보 화면 방어 헤더(관리자 블루프린트 응답에만 적용).
+# 고객 페이지·결제·무료 명식 응답(app.route 들)은 블루프린트 범위 밖이라 영향 없음.
+_SECURITY_HEADERS = {
+    "Cache-Control": "no-store, private, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "X-Robots-Tag": _NOINDEX,
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+}
+
+
+@admin_bp.after_request
+def _apply_security_headers(resp):
+    """목록·상세·인증오류(401)·404 등 관리자 응답 전반에 캐시·참조·프레임 방어 적용."""
+    for k, v in _SECURITY_HEADERS.items():
+        resp.headers[k] = v
+    return resp
 
 
 def _get_store():
