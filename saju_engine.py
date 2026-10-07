@@ -1,21 +1,26 @@
 """사주(四柱, Four Pillars) 계산 엔진.
 
-lunar_python (MIT, (c) 2020 6tail) 기반 순수 계산 모듈.
+- 사주 4주(연·월·일·시) 산출: lunar_python (MIT, (c) 2020 6tail)
+- 한국 양력↔음력 변환: korean_lunar_calendar (MIT, (c) usingsky/Jinil Lee)
+  한국천문연구원(KASI) 기준 한국 음력을 사용한다.
+
+원칙:
 - 네트워크 호출 / 파일 쓰기 / 환경변수 접근 / subprocess / eval·exec 없음.
 - 입력(생년월일·시간·성별)을 저장하거나 로그에 남기지 않는다.
 - 대한민국 출생자의 입력 현지시각(KST 벽시계)을 그대로 사용한다.
-  진태양시·출생지 경도 보정은 이번 단계에서 하지 않는다.
+  진태양시·출생지 경도·과거 표준시·서머타임(DST) 보정은 이번 단계에서 하지 않는다.
 
-주의: 라이브러리가 결과를 반환한다는 것과 한국 만세력 정확성이 검증됐다는 것은
-다르다. 신뢰 기준값 교차검증 전까지 "정확한 한국 만세력"으로 표시하지 않는다.
+주의: 한국 음력 변환이 교정되어도 전체 정확성이 검증된 것은 아니다.
+진태양시·지역 경도·역사적 표준시·DST 보정은 다음 단계이며,
+그 전까지 "정확한 한국 만세력"으로 표시하거나 판정하지 않는다.
 """
 
 import datetime
 
-from lunar_python import Solar, Lunar
+from lunar_python import Solar
+from korean_lunar_calendar import KoreanLunarCalendar
 
 SUPPORTED_YEAR_MIN = 1900
-SUPPORTED_YEAR_MAX = 2100
 
 # 자시(子時) 규칙: sect=2 는 자정(00:00) 기준 일자 전환(기본값), sect=1 은 23:00 전환.
 DEFAULT_SECT = 2
@@ -60,8 +65,8 @@ def _parse_date(birth_date):
         d = int(birth_date[8:10])
     except ValueError:
         raise SajuInputError("birth_date는 'YYYY-MM-DD' 형식이어야 합니다.")
-    if not (SUPPORTED_YEAR_MIN <= y <= SUPPORTED_YEAR_MAX):
-        raise SajuInputError("지원 연도 범위(%d-%d)를 벗어났습니다." % (SUPPORTED_YEAR_MIN, SUPPORTED_YEAR_MAX))
+    if y < SUPPORTED_YEAR_MIN:
+        raise SajuInputError("지원 출생연도는 %d년 이후입니다." % SUPPORTED_YEAR_MIN)
     if not (1 <= m <= 12):
         raise SajuInputError("월은 1-12 사이여야 합니다.")
     if not (1 <= d <= 31):
@@ -95,8 +100,20 @@ def _normalize_gender(gender):
     return mapping[key]
 
 
+def _korean_lunar_from_solar(ys, ms, ds):
+    """한국천문연구원 기준 양력->음력 표시값. (lunarYear, lunarMonth, lunarDay, isLeap)."""
+    cal = KoreanLunarCalendar()
+    if not cal.setSolarDate(ys, ms, ds):
+        raise SajuInputError("지원하지 않는 날짜입니다.")
+    return cal.lunarYear, cal.lunarMonth, cal.lunarDay, bool(cal.isIntercalation)
+
+
 def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None, is_leap_month=False):
-    """사주 4주를 계산해 dict로 반환한다. 입력 오류는 SajuInputError를 던진다."""
+    """사주 4주를 계산해 dict로 반환한다. 입력 오류는 SajuInputError를 던진다.
+
+    한국 양력<->음력 변환은 KoreanLunarCalendar(KASI 기준)만 사용하고,
+    사주 4주는 확정된 양력 날짜를 lunar_python 엔진에 넣어 계산한다.
+    """
     if calendar not in ("solar", "lunar"):
         raise SajuInputError("calendar는 'solar' 또는 'lunar'여야 합니다.")
 
@@ -116,22 +133,30 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
             datetime.date(y, m, d)
         except ValueError:
             raise SajuInputError("존재하지 않는 양력 날짜입니다.")
-        solar = Solar.fromYmdHms(y, m, d, hour, minute, 0)
-        lunar = solar.getLunar()
+        solar_y, solar_m, solar_d = y, m, d
+        # 표시용 한국 음력(KASI 기준)
+        lunar_y, lunar_m, lunar_d, lunar_leap = _korean_lunar_from_solar(solar_y, solar_m, solar_d)
     else:
-        month_arg = -m if is_leap_month else m
-        try:
-            lunar = Lunar.fromYmdHms(y, month_arg, d, hour, minute, 0)
-            solar = lunar.getSolar()
-            back = solar.getLunar()
-        except Exception:
-            # 라이브러리가 존재하지 않는 음력/윤달을 거부하면 입력 오류로 간주한다.
+        cal = KoreanLunarCalendar()
+        if not cal.setLunarDate(y, m, d, is_leap_month):
             raise SajuInputError("존재하지 않는 음력 날짜 또는 윤달입니다.")
-        # 역변환 일치 검증(연·월·일·윤달 여부).
-        if (back.getYear(), back.getMonth(), back.getDay()) != (y, month_arg, d):
+        solar_y, solar_m, solar_d = cal.solarYear, cal.solarMonth, cal.solarDay
+        # 역변환(한국 음력)으로 입력과 일치하는지 검증
+        back_y, back_m, back_d, back_leap = _korean_lunar_from_solar(solar_y, solar_m, solar_d)
+        if (back_y, back_m, back_d, back_leap) != (y, m, d, is_leap_month):
             raise SajuInputError("존재하지 않는 음력 날짜 또는 윤달입니다.")
+        lunar_y, lunar_m, lunar_d, lunar_leap = y, m, d, is_leap_month
 
-    ec = lunar.getEightChar()
+    # 미래 출생일 거부(확정된 양력 날짜 기준)
+    try:
+        solar_date = datetime.date(solar_y, solar_m, solar_d)
+    except ValueError:
+        raise SajuInputError("존재하지 않는 양력 날짜입니다.")
+    if solar_date > datetime.date.today():
+        raise SajuInputError("미래 날짜는 입력할 수 없습니다.")
+
+    # 사주 4주: 확정된 양력 날짜를 lunar_python 엔진에 투입(한국 음력 변환에는 쓰지 않음)
+    ec = Solar.fromYmdHms(solar_y, solar_m, solar_d, hour, minute, 0).getLunar().getEightChar()
     ec.setSect(DEFAULT_SECT)
 
     pillars = {
@@ -160,12 +185,8 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
         pillars["day"] = sect2["day"]
         pillars["time"] = sect2["time"]
 
-    lunar_month = lunar.getMonth()
     lunar_text = "음력 %d년 %d월%s %d일" % (
-        lunar.getYear(),
-        abs(lunar_month),
-        "(윤달)" if lunar_month < 0 else "",
-        lunar.getDay(),
+        lunar_y, lunar_m, "(윤달)" if lunar_leap else "", lunar_d,
     )
 
     result = {
@@ -178,27 +199,33 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
             "is_leap_month": is_leap_month,
         },
         "solar": {
-            "year": solar.getYear(),
-            "month": solar.getMonth(),
-            "day": solar.getDay(),
+            "year": solar_y,
+            "month": solar_m,
+            "day": solar_d,
             "time": birth_time if has_time else None,
         },
         "lunar": {
-            "year": lunar.getYear(),
-            "month": abs(lunar_month),
-            "is_leap_month": lunar_month < 0,
-            "day": lunar.getDay(),
+            "year": lunar_y,
+            "month": lunar_m,
+            "is_leap_month": lunar_leap,
+            "day": lunar_d,
             "text": lunar_text,
+            "source": "korean_lunar_calendar(KASI)",
         },
         "sect": DEFAULT_SECT,
         "convention": {
             "timezone": "KST-wallclock",
             "longitude_correction": False,
+            "historical_std_time": False,
+            "dst": False,
             "zi_rule": "sect=2(00:00)",
         },
         "pillars": pillars,
         "boundary_warning": boundary_warning,
-        "accuracy_note": "초기 버전: 한국 만세력 기준 정확성은 아직 교차검증되지 않았습니다.",
+        "accuracy_note": (
+            "한국 음력 변환은 KASI 기준으로 교정됨. 단 진태양시·지역 경도·과거 표준시·"
+            "서머타임(DST) 보정은 미적용으로, 전체 정확성은 아직 검증되지 않았습니다."
+        ),
     }
 
     tp = pillars["time"]["ganzhi"] if pillars["time"] else "미상"

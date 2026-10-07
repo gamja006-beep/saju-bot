@@ -247,5 +247,44 @@ class PrivacyNoPersistenceTest(unittest.TestCase):
         self.assertEqual(before, after, "compute_saju must not create files")
 
 
+class KoreanLunarFixTest(unittest.TestCase):
+    """Phase 2A: 한국천문연구원(KASI) 기준 음력 변환 교정 회귀."""
+
+    def test_case2_korean_lunar_fixed(self):
+        # 한국 음력 1987-05-10 평달 14:33 -> 양력 1987-06-06, 일주 丙戌
+        r = compute_saju("lunar", "1987-05-10", "14:33", "남", is_leap_month=False)
+        self.assertEqual((r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), (1987, 6, 6))
+        self.assertEqual(r["pillars"]["day"]["ganzhi"], "丙戌")
+        # 기존 중국식 오류값(1987-06-05 / 乙酉)이 더 이상 나오지 않아야 한다
+        self.assertNotEqual((r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), (1987, 6, 5))
+        self.assertNotEqual(r["pillars"]["day"]["ganzhi"], "乙酉")
+
+    def test_solar_1987_06_06_to_korean_lunar(self):
+        r = compute_saju("solar", "1987-06-06", "14:33", "남")
+        self.assertEqual((r["lunar"]["year"], r["lunar"]["month"], r["lunar"]["day"]), (1987, 5, 10))
+        self.assertFalse(r["lunar"]["is_leap_month"])
+
+    def test_leap_2020_to_solar(self):
+        r = compute_saju("lunar", "2020-04-15", None, "남", is_leap_month=True)
+        self.assertEqual((r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), (2020, 6, 6))
+
+    def test_solar_2020_06_06_reverse_is_leap4(self):
+        r = compute_saju("solar", "2020-06-06", None, "남")
+        self.assertEqual((r["lunar"]["year"], r["lunar"]["month"], r["lunar"]["day"]), (2020, 4, 15))
+        self.assertTrue(r["lunar"]["is_leap_month"])
+
+    def test_lunar_source_is_kasi(self):
+        r = compute_saju("solar", "1990-05-15", "08:30", "남")
+        self.assertEqual(r["lunar"]["source"], "korean_lunar_calendar(KASI)")
+
+    def test_future_date_rejected(self):
+        with self.assertRaises(SajuInputError):
+            compute_saju("solar", "2099-01-01", "08:30", "남")
+
+    def test_before_1900_rejected(self):
+        with self.assertRaises(SajuInputError):
+            compute_saju("solar", "1899-12-31", "08:30", "남")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
