@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>사주 상담 입력</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>사주 상담</h1>
+      <p class="sub">회원가입 없이 바로 이용하세요</p>
+      <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
+      <p class="step-label" id="step-label">1 / 8</p>
+    </header>
+
+    <form id="intake" novalidate>
+      <!-- STEP 1: 상담 유형 -->
+      <section class="step" data-step="1">
+        <h2>1. 어떤 상담을 원하세요?</h2>
+        <label class="field">별칭 (선택)
+          <input type="text" name="alias" maxlength="50" placeholder="예: 바다">
+        </label>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="consultation_type" value="종합" checked><span>종합</span></label>
+          <label class="choice"><input type="radio" name="consultation_type" value="집중"><span>집중</span></label>
+          <label class="choice"><input type="radio" name="consultation_type" value="궁합"><span>궁합</span></label>
+        </div>
+      </section>
+
+      <!-- STEP 2: 출생정보 -->
+      <section class="step" data-step="2" hidden>
+        <h2>2. 출생 정보</h2>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="calendar" value="solar" checked><span>양력</span></label>
+          <label class="choice"><input type="radio" name="calendar" value="lunar"><span>음력</span></label>
+        </div>
+        <label class="field">생년월일
+          <input type="date" name="birth_date" required>
+        </label>
+        <label class="check" id="leap-row" hidden>
+          <input type="checkbox" name="is_leap_month"> 윤달
+        </label>
+        <p class="label">성별</p>
+        <div class="choices">
+          <label class="choice"><input type="radio" name="gender" value="남" checked><span>남</span></label>
+          <label class="choice"><input type="radio" name="gender" value="여"><span>여</span></label>
+        </div>
+      </section>
+
+      <!-- STEP 3: 태어난 시간 상태 -->
+      <section class="step" data-step="3" hidden>
+        <h2>3. 태어난 시간</h2>
+        <div class="choices col">
+          <label class="choice"><input type="radio" name="time_status" value="exact" checked><span>정확히 알아요</span></label>
+          <label class="choice"><input type="radio" name="time_status" value="approx"><span>대략 알아요</span></label>
+          <label class="choice"><input type="radio" name="time_status" value="unknown"><span>몰라요</span></label>
+        </div>
+        <label class="field" id="time-exact-row">정확한 시간
+          <input type="time" name="birth_time">
+        </label>
+        <div class="field" id="time-approx-row" hidden>대략 범위
+          <div class="row">
+            <input type="time" name="birth_time_from">
+            <span class="tilde">~</span>
+            <input type="time" name="birth_time_to">
+          </div>
+          <p class="hint">범위의 가운데 시각으로 계산합니다.</p>
+        </div>
+        <p class="hint" id="time-unknown-hint" hidden>시간을 모르면 시주는 계산하지 않습니다.</p>
+      </section>
+
+      <!-- STEP 4: 출생지역 -->
+      <section class="step" data-step="4" hidden>
+        <h2>4. 태어난 지역</h2>
+        <label class="field">국가
+          <input type="text" name="country" value="대한민국" readonly>
+        </label>
+        <label class="field">도시
+          <select name="city" id="city-select"></select>
+        </label>
+        <p class="hint" id="region-unknown-hint" hidden>지역을 모르면 진태양시 보정이 적용되지 않습니다.</p>
+      </section>
+
+      <!-- STEP 5: 궁금한 내용 -->
+      <section class="step" data-step="5" hidden>
+        <h2>5. 궁금한 내용</h2>
+        <p class="label">관심 주제</p>
+        <div class="choices wrap" id="topics">
+          <label class="choice sm"><input type="checkbox" name="topics" value="재물"><span>재물</span></label>
+          <label class="choice sm"><input type="checkbox" name="topics" value="직업"><span>직업</span></label>
+          <label class="choice sm"><input type="checkbox" name="topics" value="애정"><span>애정</span></label>
+          <label class="choice sm"><input type="checkbox" name="topics" value="건강"><span>건강</span></label>
+          <label class="choice sm"><input type="checkbox" name="topics" value="학업"><span>학업</span></label>
+          <label class="choice sm"><input type="checkbox" name="topics" value="가족"><span>가족</span></label>
+        </div>
+        <label class="field">구체적인 질문
+          <textarea name="question" maxlength="2000" rows="3" placeholder="예: 올해 이직해도 될까요?"></textarea>
+        </label>
+        <label class="field">현재 상황 (선택)
+          <textarea name="situation" maxlength="2000" rows="3"></textarea>
+        </label>
+        <label class="check"><input type="checkbox" name="fortune_requested"> 특정 기간 운세도 보고 싶어요</label>
+        <label class="field">대상 기간 (선택)
+          <input type="text" name="target_period" maxlength="100" placeholder="예: 2026년 상반기">
+        </label>
+      </section>
+
+      <!-- STEP 6: 무료 명식 -->
+      <section class="step" data-step="6" hidden>
+        <h2>6. 무료 명식</h2>
+        <div id="myeongsik" class="myeongsik"></div>
+        <p class="disclaimer">
+          본 결과는 명리학 참고용이며 미래를 확정적으로 단정하지 않습니다.
+          한국 음력은 KASI 기준이나 전체 정확성은 독립 검증 전까지 확정되지 않았습니다.
+        </p>
+      </section>
+
+      <!-- STEP 7: 상품 비교 -->
+      <section class="step" data-step="7" hidden>
+        <h2>7. 보고서 상품</h2>
+        <div id="products" class="products"></div>
+        <ul class="notices">
+          <li>전화·화상·대면 상담은 제공하지 않습니다. 모든 결과는 화면 또는 이메일로만 제공됩니다.</li>
+          <li>'전문가 검토' 표시 상품만 실제 전문가가 검토합니다. 그 외는 AI 기반 자동 해석입니다.</li>
+          <li>현재 실제 결제는 준비 중이며 결제 버튼은 비활성화되어 있습니다.</li>
+        </ul>
+      </section>
+
+      <!-- STEP 8: 보고서 자료 -->
+      <section class="step" data-step="8" hidden>
+        <h2>8. 보고서용 자료</h2>
+        <p class="hint">아래 자료를 복사해 명리학 보고서 작성에 사용할 수 있습니다. 이메일·전화·결제·상세주소는 포함되지 않습니다.</p>
+        <button type="button" id="copy-report" class="btn primary">명리학 보고서용 자료 복사</button>
+        <span id="copy-status" class="copy-status" aria-live="polite"></span>
+        <pre id="report-json" class="report-json" aria-label="보고서 자료 미리보기"></pre>
+      </section>
+
+      <div class="nav">
+        <button type="button" id="prev" class="btn ghost">이전</button>
+        <button type="button" id="next" class="btn primary">다음</button>
+      </div>
+      <p id="form-error" class="form-error" aria-live="polite"></p>
+    </form>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

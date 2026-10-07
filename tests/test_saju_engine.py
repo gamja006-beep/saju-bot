@@ -138,7 +138,8 @@ class FlaskRegressionTest(unittest.TestCase):
         r = self.c.get("/")
         self.assertEqual(r.status_code, 200)
         body = r.get_data(as_text=True)
-        for token in ["생년월일", "태어난 시간", "성별", "양력", "음력", "윤달", "/saju"]:
+        # 다단계 UI(templates/index.html). /saju 호출은 static/app.js로 이동.
+        for token in ["생년월일", "태어난 시간", "성별", "양력", "음력", "윤달"]:
             self.assertIn(token, body)
 
     def test_saju_ok(self):
@@ -400,6 +401,134 @@ class Phase2BFlaskTest(unittest.TestCase):
             "calendar": "solar", "birth_date": "2012-02-04", "birth_time": "19:23", "gender": "남"})
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()["needs_confirmation"])
+
+
+class CustomerUITest(unittest.TestCase):
+    """Batch 2: 고객 입력 UI + 상품 + 보고서 자료."""
+
+    def setUp(self):
+        self.c = saju_bot.app.test_client()
+
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_index_served(self):
+        self.assertEqual(self.c.get("/").status_code, 200)
+
+    def test_static_assets_served(self):
+        self.assertEqual(self.c.get("/static/app.css").status_code, 200)
+        self.assertEqual(self.c.get("/static/app.js").status_code, 200)
+
+    def test_step_markup_present(self):
+        html = self._read("templates/index.html")
+        for n in range(1, 9):
+            self.assertIn('data-step="%d"' % n, html)
+        self.assertIn('id="prev"', html)
+        self.assertIn('id="next"', html)
+        self.assertIn('id="progress-bar"', html)
+
+    def test_calendar_leap_and_gender(self):
+        html = self._read("templates/index.html")
+        for t in ["양력", "음력", "윤달", "성별", 'name="calendar"', 'name="is_leap_month"']:
+            self.assertIn(t, html)
+
+    def test_time_status_branches(self):
+        html = self._read("templates/index.html")
+        for v in ['value="exact"', 'value="approx"', 'value="unknown"']:
+            self.assertIn(v, html)
+
+    def test_region_cities_and_longitude(self):
+        js = self._read("static/app.js")
+        self.assertIn("서울", js)
+        self.assertIn("126.978", js)
+        self.assertIn("속초", js)       # CASE2 도시
+        self.assertIn("lon: null", js)  # 지역 모름 허용
+        self.assertIn("birth_place", js)
+        self.assertIn("longitude", js)
+
+    def test_region_unknown_warning_present(self):
+        html = self._read("templates/index.html")
+        self.assertIn("진태양시 보정이 적용되지 않", html)
+
+    def test_seven_products_and_prices(self):
+        js = self._read("static/app.js")
+        for price in ["0원", "9,900원", "39,000원", "99,000원", "290,000원", "590,000원", "990,000원"]:
+            self.assertIn(price, js)
+        # 7개 상품 id
+        for pid in ["free", "basic_9900", "deep_39000", "expert_99000",
+                    "life_290000", "relation_590000", "vip_990000"]:
+            self.assertIn(pid, js)
+
+    def test_no_phone_video_inperson_offering(self):
+        html = self._read("templates/index.html")
+        self.assertIn("전화·화상·대면 상담은 제공하지 않습니다", html)
+
+    def test_expert_badge_only_marked_products(self):
+        js = self._read("static/app.js")
+        self.assertIn("전문가 검토", js)
+        self.assertIn("AI 기반 자동 해석", js)
+
+    def test_payment_disabled(self):
+        js = self._read("static/app.js")
+        self.assertIn("결제 기능 준비 중", js)
+        self.assertIn("disabled", js)
+
+    def test_js_uses_escaping(self):
+        js = self._read("static/app.js")
+        self.assertIn("function esc(", js)
+        self.assertIn("textContent", js)
+
+    # ---- /report-data 엔드포인트 ----
+    def _report(self, **over):
+        payload = {
+            "calendar": "solar", "birth_date": "1990-05-15", "birth_time": "08:30",
+            "gender": "남", "consultation_type": "종합",
+            "birth_place": {"country": "KR", "city": "서울", "longitude": 126.978},
+            "alias": "바다", "question": "올해 이직?", "topics": ["직업", "재물"],
+            "selected_product": "expert_99000",
+        }
+        payload.update(over)
+        return self.c.post("/report-data", json=payload)
+
+    def test_report_data_ok(self):
+        r = self._report()
+        self.assertEqual(r.status_code, 200)
+        rep = r.get_json()["report"]
+        self.assertEqual(rep["schema"], "saju_report_request_v1")
+        self.assertIn("customer_data", rep)
+        self.assertIn("saju", rep)
+        self.assertEqual(rep["customer_data"]["consultation_type"], "종합")
+        self.assertEqual(rep["selected_product"], "expert_99000")
+
+    def test_report_excludes_pii(self):
+        r = self._report(email="x@y.com", phone="010-1234-5678",
+                         payment="4111111111111111", address="서울시 강남구 ...")
+        import json as _json
+        blob = _json.dumps(r.get_json(), ensure_ascii=False)
+        for forbidden in ["x@y.com", "010-1234-5678", "4111111111111111", "강남구"]:
+            self.assertNotIn(forbidden, blob)
+
+    def test_report_sanitizes_control_chars_and_length(self):
+        r = self._report(alias="바\x00다\x07" + "가" * 100, question="줄\x01바꿈")
+        rep = r.get_json()["report"]
+        alias = rep["customer_data"]["alias"]
+        self.assertNotIn("\x00", alias)
+        self.assertNotIn("\x07", alias)
+        self.assertLessEqual(len(alias), 50)
+        self.assertNotIn("\x01", rep["customer_data"]["question"])
+
+    def test_report_bad_consultation_type_400(self):
+        r = self._report(consultation_type="운세")
+        self.assertEqual(r.status_code, 400)
+
+    def test_report_unknown_product_400(self):
+        r = self._report(selected_product="gold_999")
+        self.assertEqual(r.status_code, 400)
+
+    def test_report_invalid_birthdate_400(self):
+        r = self._report(birth_date="bad-date")
+        self.assertEqual(r.status_code, 400)
 
 
 if __name__ == "__main__":

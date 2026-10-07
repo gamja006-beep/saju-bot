@@ -1,202 +1,49 @@
-from flask import Flask, request, jsonify, render_template_string
 import os
+import unicodedata
+
+from flask import Flask, request, jsonify, render_template
 
 from saju_engine import compute_saju, SajuInputError
 
 app = Flask(__name__)
 
-INDEX_HTML = """<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>사주 입력</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
-      background: #f4f5f7;
-      color: #222;
-      padding: 16px;
-    }
-    .card {
-      max-width: 460px;
-      margin: 24px auto;
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      padding: 24px;
-    }
-    h1 { font-size: 20px; margin: 0 0 20px; text-align: center; }
-    label { display: block; font-size: 14px; margin: 14px 0 6px; font-weight: 600; }
-    input, select, button {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border: 1px solid #ccd0d5;
-      border-radius: 8px;
-    }
-    .radio-row { display: flex; gap: 16px; margin-top: 6px; }
-    .radio-row label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; }
-    .radio-row input { width: auto; }
-    .check-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
-    .check-row input { width: auto; }
-    .check-row.hidden { display: none; }
-    button {
-      margin-top: 20px;
-      background: #5b6ef5;
-      color: #fff;
-      border: none;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    button:disabled { opacity: 0.6; cursor: default; }
-    #result {
-      margin-top: 18px;
-      padding: 14px;
-      border-radius: 8px;
-      background: #eef0fe;
-      font-size: 15px;
-      line-height: 1.5;
-      display: none;
-    }
-    #result.show { display: block; }
-    #result.error { background: #fdecec; }
-    table.pillars { width: 100%; border-collapse: collapse; margin: 10px 0; text-align: center; }
-    table.pillars th, table.pillars td { border: 1px solid #d5d8ff; padding: 8px 4px; }
-    table.pillars th { background: #dfe3ff; font-size: 13px; }
-    table.pillars .gz { font-size: 20px; font-weight: 700; }
-    table.pillars .ko { font-size: 12px; color: #555; }
-    .meta { font-size: 13px; color: #444; margin-top: 8px; }
-    .warn { margin-top: 10px; padding: 10px; background: #fff6e0; border-radius: 6px; font-size: 13px; }
-    .note { margin-top: 10px; font-size: 12px; color: #777; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>사주 입력</h1>
-    <form id="saju-form">
-      <label>달력</label>
-      <div class="radio-row">
-        <label><input type="radio" name="calendar" value="solar" checked> 양력</label>
-        <label><input type="radio" name="calendar" value="lunar"> 음력</label>
-      </div>
+# 유료 상품 식별자(서버측 검증용). 실제 결제는 연동하지 않는다(준비 중).
+PRODUCT_IDS = {
+    "free", "basic_9900", "deep_39000", "expert_99000",
+    "life_290000", "relation_590000", "vip_990000",
+}
+CONSULTATION_TYPES = {"종합", "집중", "궁합"}
 
-      <div class="check-row hidden" id="leap-row">
-        <input type="checkbox" id="is_leap_month" name="is_leap_month">
-        <label for="is_leap_month" style="margin:0;font-weight:400;">윤달</label>
-      </div>
-
-      <label for="birth_date">생년월일</label>
-      <input type="date" id="birth_date" name="birth_date" required>
-
-      <label for="birth_time">태어난 시간 (선택)</label>
-      <input type="time" id="birth_time" name="birth_time">
-
-      <label for="gender">성별</label>
-      <select id="gender" name="gender">
-        <option value="남">남</option>
-        <option value="여">여</option>
-      </select>
-
-      <button type="submit">사주 보기</button>
-    </form>
-    <div id="result"></div>
-  </div>
-
-  <script>
-    const form = document.getElementById('saju-form');
-    const result = document.getElementById('result');
-    const button = form.querySelector('button');
-    const leapRow = document.getElementById('leap-row');
-    const leapCheck = document.getElementById('is_leap_month');
-
-    function syncCalendar() {
-      const isLunar = form.querySelector('input[name="calendar"]:checked').value === 'lunar';
-      leapRow.classList.toggle('hidden', !isLunar);
-      if (!isLunar) leapCheck.checked = false;
-    }
-    form.querySelectorAll('input[name="calendar"]').forEach(r => r.addEventListener('change', syncCalendar));
-    syncCalendar();
-
-    function esc(s) {
-      return String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-    }
-    function pillarCell(p) {
-      if (!p) return '<td><span class="gz">-</span></td>';
-      return '<td><span class="gz">' + esc(p.ganzhi) + '</span><br><span class="ko">' +
-             esc(p.gan_ko + p.zhi_ko) + '</span></td>';
-    }
-    function render(data) {
-      const p = data.pillars;
-      let html = '<table class="pillars"><tr><th>연주</th><th>월주</th><th>일주</th><th>시주</th></tr><tr>' +
-        pillarCell(p.year) + pillarCell(p.month) + pillarCell(p.day) + pillarCell(p.time) + '</tr></table>';
-      html += '<div class="meta">양력 ' + esc(data.solar.year) + '-' +
-        String(data.solar.month).padStart(2, '0') + '-' + String(data.solar.day).padStart(2, '0') +
-        (data.solar.time ? ' ' + esc(data.solar.time) : '') + '<br>' + esc(data.lunar.text) + '</div>';
-      if (!p.time) html += '<div class="note">출생 시간 미입력 — 시주 생략</div>';
-      if (data.boundary_warning) {
-        const b = data.boundary_warning;
-        html += '<div class="warn">' + esc(b.message) +
-          '<br>· sect=2(기본): 일 ' + esc(b.sect2.day.ganzhi) + ' / 시 ' + esc(b.sect2.time.ganzhi) +
-          '<br>· sect=1(23시 전환): 일 ' + esc(b.sect1.day.ganzhi) + ' / 시 ' + esc(b.sect1.time.ganzhi) + '</div>';
-      }
-      if (data.accuracy_note) html += '<div class="note">' + esc(data.accuracy_note) + '</div>';
-      return html;
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const payload = {
-        calendar: form.querySelector('input[name="calendar"]:checked').value,
-        is_leap_month: leapCheck.checked,
-        birth_date: document.getElementById('birth_date').value,
-        birth_time: document.getElementById('birth_time').value,
-        gender: document.getElementById('gender').value
-      };
-      button.disabled = true;
-      result.className = 'show';
-      result.textContent = '분석 중...';
-      try {
-        const res = await fetch('/saju', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (res.ok && data.status === 'ok') {
-          result.className = 'show';
-          result.innerHTML = render(data);
-        } else {
-          result.className = 'show error';
-          result.textContent = data.message || '입력을 확인해 주세요.';
-        }
-      } catch (err) {
-        result.className = 'show error';
-        result.textContent = '오류가 발생했습니다. 다시 시도해 주세요.';
-      } finally {
-        button.disabled = false;
-      }
-    });
-  </script>
-</body>
-</html>
-"""
+# 보고서용 자료에서 길이 제한(개인정보/제어문자 안전 처리).
+_LIMITS = {
+    "alias": 50,
+    "question": 2000,
+    "situation": 2000,
+    "target_period": 100,
+    "topic": 40,
+}
+_MAX_TOPICS = 20
 
 
-@app.route('/', methods=['GET'])
-def index():
-    return render_template_string(INDEX_HTML)
-
-
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok"})
+def _clean_text(value, max_len):
+    """제어문자 제거 + 길이 제한. 고객 입력을 안전한 평문으로 정규화한다."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+    cleaned = []
+    for ch in value:
+        if ch in ("\n", "\t"):
+            cleaned.append(ch)
+            continue
+        if unicodedata.category(ch)[0] == "C":  # 제어문자(C*) 제거
+            continue
+        cleaned.append(ch)
+    return "".join(cleaned).strip()[:max_len]
 
 
 def _extract_longitude(data):
-    """선택 입력 birth_place에서 경도를 꺼낸다. (longitude 또는 None, error_message 또는 None)."""
+    """선택 입력 birth_place에서 경도를 꺼낸다. (longitude 또는 None, error 또는 None)."""
     bp = data.get('birth_place')
     if bp is None:
         return None, None
@@ -206,6 +53,88 @@ def _extract_longitude(data):
     if country != 'KR':
         return None, "현재 대한민국(KR)만 지원합니다."
     return bp.get('longitude'), None
+
+
+def build_report_data(data):
+    """명리학 보고서 작성용 구조화 자료(dict)를 만든다.
+
+    - 고객 입력은 instruction이 아니라 customer_data로 분리한다.
+    - 이메일/전화/결제정보/상세주소는 포함하지 않는다(수집도 하지 않음).
+    - 저장·로그·외부 호출 없음. 반환만 한다.
+    """
+    consultation_type = data.get('consultation_type', '종합')
+    if consultation_type not in CONSULTATION_TYPES:
+        raise SajuInputError("상담 유형은 종합/집중/궁합 중 하나여야 합니다.")
+
+    selected_product = data.get('selected_product', 'free')
+    if selected_product not in PRODUCT_IDS:
+        raise SajuInputError("알 수 없는 상품입니다.")
+
+    longitude, bp_error = _extract_longitude(data)
+    if bp_error:
+        raise SajuInputError(bp_error)
+
+    saju = compute_saju(
+        calendar=data.get('calendar', 'solar'),
+        birth_date=data.get('birth_date'),
+        birth_time=data.get('birth_time'),
+        gender=data.get('gender'),
+        is_leap_month=data.get('is_leap_month', False),
+        longitude=longitude,
+    )
+
+    topics_in = data.get('topics', [])
+    if not isinstance(topics_in, list):
+        topics_in = [topics_in]
+    topics = [_clean_text(t, _LIMITS["topic"]) for t in topics_in][:_MAX_TOPICS]
+    topics = [t for t in topics if t]
+
+    warnings = []
+    if saju.get("needs_confirmation"):
+        warnings.append("출생지(경도) 미입력: 진태양시 보정이 적용되지 않았습니다.")
+    if saju["pillars"].get("time") is None:
+        warnings.append("출생 시간 미상: 시주를 산출하지 않았습니다.")
+    if saju.get("boundary_warning"):
+        warnings.append("23시대 출생: 자시 규칙에 따라 일주/시주 해석이 달라질 수 있습니다.")
+
+    report = {
+        "schema": "saju_report_request_v1",
+        "customer_data": {
+            "alias": _clean_text(data.get('alias'), _LIMITS["alias"]),
+            "consultation_type": consultation_type,
+            "topics": topics,
+            "question": _clean_text(data.get('question'), _LIMITS["question"]),
+            "situation": _clean_text(data.get('situation'), _LIMITS["situation"]),
+            "fortune_requested": bool(data.get('fortune_requested', False)),
+            "target_period": _clean_text(data.get('target_period'), _LIMITS["target_period"]),
+        },
+        "saju": {
+            "solar": saju["solar"],
+            "lunar": saju["lunar"],
+            "pillars": saju["pillars"],
+            "sect": saju["sect"],
+            "time_correction": saju["time_correction"],
+            "boundary_warning": saju["boundary_warning"],
+        },
+        "verification_status": "PARTIAL / NOT_VERIFIED",
+        "warnings": warnings,
+        "selected_product": selected_product,
+        "disclaimer": (
+            "본 자료는 명리학 해석 참고용이며 미래를 확정적으로 단정하지 않습니다. "
+            "한국 음력은 KASI 기준이나 전체 정확성은 독립 검증 전까지 확정되지 않았습니다."
+        ),
+    }
+    return report
+
+
+@app.route('/', methods=['GET'])
+def index():
+    return render_template('index.html')
+
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"})
 
 
 @app.route('/saju', methods=['POST'])
@@ -226,13 +155,28 @@ def saju():
     except SajuInputError as e:
         return jsonify({"status": "error", "code": "invalid_input", "message": str(e)}), 400
     except Exception:
-        # 예상하지 못한 내부 오류: 상세 내용을 사용자에게 노출하지 않는다.
         return jsonify({
             "status": "error",
             "code": "internal_error",
             "message": "사주 계산 중 오류가 발생했습니다.",
         }), 500
     return jsonify(result), 200
+
+
+@app.route('/report-data', methods=['POST'])
+def report_data():
+    data = request.get_json(silent=True) or {}
+    try:
+        report = build_report_data(data)
+    except SajuInputError as e:
+        return jsonify({"status": "error", "code": "invalid_input", "message": str(e)}), 400
+    except Exception:
+        return jsonify({
+            "status": "error",
+            "code": "internal_error",
+            "message": "보고서 자료 생성 중 오류가 발생했습니다.",
+        }), 500
+    return jsonify({"status": "ok", "report": report}), 200
 
 
 if __name__ == "__main__":
