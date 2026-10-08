@@ -243,7 +243,7 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn("상세 보기", body)
 
     def test_detail_has_copy_button_scoped_to_report_package(self):
-        # 복사 소스는 서버가 만든 '명리학 보고서 자료' 평문(#report-package)으로 한정한다.
+        # 복사 소스는 서버가 만든 '최종 보고서 생성자료' 평문(#report-package)으로 한정한다.
         oid = self._make_paid()
         body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
         self.assertIn("최종 보고서 생성자료 복사", body)
@@ -251,6 +251,17 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn('id="admin-consultation"', body)          # 상담 카드는 화면에 그대로 유지
         self.assertIn('id="report-package"', body)              # 복사 대상 전용 영역
         self.assertIn('getElementById("report-package")', body)  # 복사 소스 한정
+
+    def test_copy_button_exact_label_no_legacy(self):
+        # 버튼에 렌더링되는 정확한 문구를 고정하고, 과거 라벨이 되살아나지 않도록 막는다.
+        import re
+        oid = self._make_paid()
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        m = re.search(r'<button[^>]*id="copy-report"[^>]*>(.*?)</button>', body, re.DOTALL)
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1).strip(), "최종 보고서 생성자료 복사")
+        for legacy in ["명리학 보고서 자료 복사", "보고서 자료 복사"]:
+            self.assertNotIn(legacy, body)
 
     def test_copy_report_source_excludes_forbidden_fields(self):
         oid = self._make_paid(
@@ -406,7 +417,10 @@ class AdminViewerTest(unittest.TestCase):
     def test_report_copy_success_message(self):
         oid = self._make_paid(payload=dict(self._FULL))
         body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
-        self.assertIn("최종 보고서 생성자료를 복사했어요. 명리학 챗봇에 한 번만 붙여넣으세요.", body)
+        self.assertIn('status.textContent = "최종 보고서 생성자료를 복사했어요."', body)
+        # 과거 성공 메시지(접미 문구 포함)가 남아 있지 않다.
+        self.assertNotIn("명리학 챗봇에 한 번만 붙여넣으세요.", body)
+        self.assertNotIn("명리학 보고서 자료를 복사했어요.", body)
 
     # ---- 한 번 붙여넣기용 '최종 보고서 생성자료' ----
     def test_one_paste_has_all_blocks(self):

@@ -63,7 +63,7 @@
       // paymentKey/암호문/DB 내부값/관리자 비밀번호는 이 영역에 없어 복사 대상이 아니다.
       var src = document.getElementById("report-package");
       var text = src ? src.textContent : "";
-      function done() { if (status) status.textContent = "최종 보고서 생성자료를 복사했어요. 명리학 챗봇에 한 번만 붙여넣으세요."; }
+      function done() { if (status) status.textContent = "최종 보고서 생성자료를 복사했어요."; }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, status, done); });
       } else { fallback(text, status, done); }
