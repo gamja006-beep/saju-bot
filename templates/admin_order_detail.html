@@ -30,10 +30,11 @@
       {% endfor %}
     </div>
     {% if o.report_text %}
-    <h2 class="admin-h2">명리학 보고서 자료</h2>
+    <h2 class="admin-h2">최종 보고서 생성자료</h2>
+    <p class="sub">복사 후 명리학 전문 챗봇에 한 번만 붙여넣으면 선택 상품에 맞는 최종 보고서와 PDF를 생성합니다.</p>
     <p class="sub">출생정보가 포함됩니다. 보고서 작성 목적으로만 사용하고 발송 후 안전하게 폐기하세요.</p>
     <div class="admin-actions">
-      <button type="button" id="copy-report" class="btn primary admin-copy">명리학 보고서 자료 복사</button>
+      <button type="button" id="copy-report" class="btn primary admin-copy">최종 보고서 생성자료 복사</button>
       <span id="copy-status" class="copy-status" aria-live="polite"></span>
     </div>
     <!-- 복사 대상: 서버에서 생성한 한국어 평문만. 이메일/주문번호/금액/결제키/암호문/경도/내부 JSON 은 포함하지 않는다. -->
@@ -57,12 +58,12 @@
     }
     btn.addEventListener("click", function () {
       var status = document.getElementById("copy-status");
-      // 서버가 만든 '명리학 보고서 자료' 평문만 복사한다. textContent 로 읽으므로
+      // 서버가 만든 '최종 보고서 생성자료' 평문만 복사한다. textContent 로 읽으므로
       // 저장된 XSS 문자열도 실행되지 않고 문자 그대로 복사된다.
       // paymentKey/암호문/DB 내부값/관리자 비밀번호는 이 영역에 없어 복사 대상이 아니다.
       var src = document.getElementById("report-package");
       var text = src ? src.textContent : "";
-      function done() { if (status) status.textContent = "명리학 보고서 자료를 복사했어요."; }
+      function done() { if (status) status.textContent = "최종 보고서 생성자료를 복사했어요. 명리학 챗봇에 한 번만 붙여넣으세요."; }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, status, done); });
       } else { fallback(text, status, done); }
