@@ -56,22 +56,24 @@ class InitDbTest(unittest.TestCase):
         rc = init_db.main()
         self.assertNotEqual(rc, 0)
 
-    def test_two_create_statements_executed_once(self):
+    def test_create_statements_executed_once(self):
         fake = FakeConn()
         n = init_db.init_schema(connect=lambda dsn: fake)
-        self.assertEqual(n, 2)
-        self.assertEqual(len(fake.executed), 2)
+        # orders, order_private_data, order_notifications 3개 테이블.
+        self.assertEqual(n, 3)
+        self.assertEqual(len(fake.executed), 3)
         creates = [s for s in fake.executed if "CREATE TABLE" in s]
-        self.assertEqual(len(creates), 2)
+        self.assertEqual(len(creates), 3)
         self.assertTrue(any("orders" in s for s in fake.executed))
         self.assertTrue(any("order_private_data" in s for s in fake.executed))
+        self.assertTrue(any("order_notifications" in s for s in fake.executed))
         self.assertTrue(fake.committed)
         self.assertFalse(fake.rolledback)
         self.assertTrue(fake.closed)
 
     def test_schema_idempotent_markers_preserved(self):
-        # SCHEMA_SQL 내용을 바꾸지 않고 멱등(IF NOT EXISTS) 유지 확인
-        self.assertEqual(payments.SCHEMA_SQL.count("CREATE TABLE IF NOT EXISTS"), 2)
+        # SCHEMA_SQL 멱등(IF NOT EXISTS) 유지 확인(테이블 3개).
+        self.assertEqual(payments.SCHEMA_SQL.count("CREATE TABLE IF NOT EXISTS"), 3)
 
     def test_main_success_outputs_schema_ok(self):
         fake = FakeConn()

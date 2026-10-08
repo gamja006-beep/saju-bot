@@ -20,9 +20,10 @@ import json
 import secrets
 from functools import wraps
 
-from flask import Blueprint, request, Response, render_template, abort, make_response
+from flask import Blueprint, request, Response, render_template, abort, make_response, jsonify
 
 import payments
+import notifier
 import saju_insights
 from saju_engine import compute_saju, SajuInputError
 
@@ -601,5 +602,45 @@ def admin_order_detail(order_id):
         "email": _decrypt_email(store, order_id),
         "consultation": _humanize_consultation(payload),
         "report_text": _build_copy_package(order, payload),
+        "notifications": _humanize_notifications(store, order_id),
+        "notify": notifier.notify_status_view(),
     }
     return _with_noindex(render_template("admin_order_detail.html", o=view))
+
+
+_NOTIFY_CHANNEL_LABEL = {"email": "이메일", "telegram": "텔레그램"}
+_NOTIFY_STATUS_LABEL = {
+    "PENDING": "대기 중", "SENT": "발송 접수됨", "FAILED": "실패(재시도 예정)",
+    "UNKNOWN": "불명확(확인 필요)",
+}
+
+
+def _humanize_notifications(store, order_id):
+    """주문별 알림 작업 상태를 화면용으로 정리(채널/상태/시도/오류유형만; PII·비밀값 없음)."""
+    try:
+        rows = store.get_notifications_for_order(order_id)
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        out.append({
+            "channel_label": _NOTIFY_CHANNEL_LABEL.get(r.get("channel"), r.get("channel") or ""),
+            "status_label": _NOTIFY_STATUS_LABEL.get(r.get("status"), r.get("status") or ""),
+            "attempts": r.get("attempts", 0),
+            "error_type": r.get("error_type") or "",
+        })
+    return out
+
+
+@admin_bp.route("/admin/notifications/drain", methods=["POST"])
+@require_admin
+def admin_notifications_drain():
+    """미발송 운영자 알림을 n8n 으로 전송(인증 필요). 설정 비활성/미완료면 외부 호출 없이 상태만 반환.
+
+    운영 스케줄은 등록하지 않는다(필요 시 운영자가 수동/외부 트리거로 호출)."""
+    store = _get_store()
+    try:
+        summary = notifier.drain(store)
+    except Exception:
+        abort(500)  # 내부 오류·비밀값 비노출
+    return jsonify(summary)

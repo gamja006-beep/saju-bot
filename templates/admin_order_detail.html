@@ -41,6 +41,22 @@
     <pre id="report-package" hidden>{{ o.report_text }}</pre>
     {% endif %}
 
+    <h2 class="admin-h2">운영자 알림 상태</h2>
+    <div class="summary" id="admin-notifications">
+      <div class="srow">
+        <span class="sk">알림 설정</span>
+        <span class="sv">{% if o.notify.ready %}활성{% else %}비활성 또는 미완료{% endif %}</span>
+      </div>
+      {% for n in o.notifications %}
+      <div class="srow">
+        <span class="sk">{{ n.channel_label }}</span>
+        <span class="sv">{{ n.status_label }} · 시도 {{ n.attempts }}회{% if n.error_type %} · {{ n.error_type }}{% endif %}</span>
+      </div>
+      {% else %}
+      <div class="srow"><span class="sv">대기 중인 알림 작업이 없습니다.</span></div>
+      {% endfor %}
+    </div>
+
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
   </main>
   <script>

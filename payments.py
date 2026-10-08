@@ -16,6 +16,7 @@ import json
 import base64
 import secrets
 import datetime
+import threading
 import urllib.request
 
 # ---- 상품 서버 정본 (금액: 원, 정수) ----
@@ -35,6 +36,24 @@ HTTP_TIMEOUT_SEC = 10
 PRIVATE_DATA_RETENTION_DAYS = 90
 
 _SUCCESS_STATES = ("DONE", "APPROVED", "PAID")
+
+# 운영자 알림 채널. PAID 전환 시 채널별 아웃박스 작업을 1건씩 기록한다.
+NOTIFY_CHANNELS = ("email", "telegram")
+# 처리 잠금(lease) 유효시간: 만료되면 다른 drain 이 회수할 수 있다(재시작·중단 복구).
+NOTIFY_LEASE_SECONDS = 120
+# 재시도 백오프(분). attempts 수에 따라 next_retry_at 을 뒤로 민다.
+_NOTIFY_BACKOFF_MIN = (1, 5, 15, 60, 180)
+
+
+def notification_event_id(order_id, channel):
+    """재시도해도 동일하게 유지되는 멱등 이벤트 ID."""
+    return "order.paid:%s:%s" % (order_id, channel)
+
+
+def notification_next_retry(now, attempts):
+    """실패(명확) 채널의 다음 재시도 시각. attempts 는 증가 후 값."""
+    idx = min(max(attempts - 1, 0), len(_NOTIFY_BACKOFF_MIN) - 1)
+    return now + datetime.timedelta(minutes=_NOTIFY_BACKOFF_MIN[idx])
 
 import re as _re
 _EMAIL_RE = _re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -132,6 +151,8 @@ class InMemoryOrderStore:
     def __init__(self):
         self.orders = {}
         self.private = {}
+        self.notifications = {}  # (order_id, channel) -> 작업 dict (UNIQUE 보장)
+        self._lock = threading.Lock()
         self.calls = 0
 
     def create_order(self, rec):
@@ -166,6 +187,82 @@ class InMemoryOrderStore:
             reverse=True)
         return paid[:limit]
 
+    # ---- 알림 아웃박스 (PAID 전환과 원자적으로 기록) ----
+    def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):
+        """주문을 PAID 로 올리고 채널별 알림 작업을 같은 임계구역에서 기록한다.
+
+        notifications: [(channel, event_id), ...]. UNIQUE(order_id, channel) 이므로
+        이미 있는 (order_id, channel) 은 덮어쓰지 않는다(멱등·중복 방지).
+        """
+        self.calls += 1
+        with self._lock:
+            if order_id in self.orders:
+                self.orders[order_id].update(
+                    status="PAID", payment_key=payment_key, paid_at=now, updated_at=now)
+            for channel, event_id in notifications:
+                key = (order_id, channel)
+                if key not in self.notifications:
+                    self.notifications[key] = {
+                        "order_id": order_id, "channel": channel, "event_id": event_id,
+                        "status": "PENDING", "attempts": 0, "error_type": None,
+                        "lease_until": None, "lease_token": None, "next_retry_at": now,
+                        "created_at": now, "updated_at": now,
+                    }
+
+    def get_notifications_for_order(self, order_id):
+        with self._lock:
+            return [dict(v) for (oid, _), v in self.notifications.items() if oid == order_id]
+
+    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50):
+        """재시도 대상(PENDING/FAILED, next_retry 도래, lease 만료)을 원자적으로 선점한다.
+
+        선점 시 lease_token 을 각인한다(펜싱). 결과 기록은 이 토큰을 제시해야 반영된다.
+        """
+        self.calls += 1
+        claimed = []
+        with self._lock:
+            items = sorted(self.notifications.values(), key=lambda r: r["created_at"])
+            for r in items:
+                if len(claimed) >= limit:
+                    break
+                if r["status"] not in ("PENDING", "FAILED"):
+                    continue  # SENT/UNKNOWN 은 자동 재시도 대상이 아니다
+                if r.get("next_retry_at") and r["next_retry_at"] > now:
+                    continue
+                if r.get("lease_until") and r["lease_until"] > now:
+                    continue  # 다른 worker 가 선점 중
+                r["lease_until"] = lease_until
+                r["lease_token"] = lease_token
+                r["updated_at"] = now
+                claimed.append({"order_id": r["order_id"], "channel": r["channel"],
+                                "event_id": r["event_id"], "attempts": r["attempts"]})
+        return claimed
+
+    def _apply_if_leased(self, order_id, channel, lease_token, **fields):
+        """lease_token 이 현재 각인된 토큰과 같을 때만 기록한다(만료된 이전 worker 차단)."""
+        with self._lock:
+            r = self.notifications.get((order_id, channel))
+            if r and r.get("lease_token") == lease_token:
+                r.update(fields)
+                r["lease_token"] = None  # lease 해제
+
+    def mark_notification_sent(self, order_id, channel, now, lease_token):
+        self._apply_if_leased(order_id, channel, lease_token, status="SENT",
+                              lease_until=None, next_retry_at=None, error_type=None,
+                              updated_at=now)
+
+    def mark_notification_failed(self, order_id, channel, now, attempts, next_retry_at,
+                                 error_type, lease_token):
+        self._apply_if_leased(order_id, channel, lease_token, status="FAILED",
+                              attempts=attempts, next_retry_at=next_retry_at, lease_until=None,
+                              error_type=error_type, updated_at=now)
+
+    def mark_notification_unknown(self, order_id, channel, now, attempts, error_type, lease_token):
+        # 발송 여부 불명확: 자동 재시도하지 않고 별도 상태로 둔다(수동 확인).
+        self._apply_if_leased(order_id, channel, lease_token, status="UNKNOWN",
+                              attempts=attempts, next_retry_at=None, lease_until=None,
+                              error_type=error_type, updated_at=now)
+
 
 # Railway PostgreSQL 스키마 (이번 단계에서는 실행하지 않음; 운영 배포 시 적용).
 SCHEMA_SQL = """
@@ -187,6 +284,20 @@ CREATE TABLE IF NOT EXISTS order_private_data (
     encrypted_consultation_payload TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS order_notifications (
+    order_id TEXT NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    channel TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error_type TEXT,
+    lease_until TIMESTAMPTZ,
+    lease_token TEXT,
+    next_retry_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (order_id, channel)
 );
 """
 
@@ -267,6 +378,79 @@ class PostgresOrderStore:
             cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
                     "created_at", "updated_at", "paid_at", "private_data_expires_at"]
             return [dict(zip(cols, r)) for r in rows]
+
+    # ---- 알림 아웃박스 ----
+    def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):
+        """PAID 전환 + 채널별 알림 작업 기록을 단일 트랜잭션으로 수행(원자성).
+
+        `with conn` 블록이 정상 종료 시 commit, 예외 시 rollback 한다.
+        ON CONFLICT 로 UNIQUE(order_id, channel) 중복 생성을 막는다.
+        """
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE orders SET status=%s, payment_key=%s, paid_at=%s, updated_at=%s"
+                " WHERE order_id=%s",
+                ("PAID", payment_key, now, now, order_id))
+            for channel, event_id in notifications:
+                cur.execute(
+                    "INSERT INTO order_notifications (order_id, channel, event_id, status,"
+                    " attempts, next_retry_at, created_at, updated_at)"
+                    " VALUES (%s,%s,%s,'PENDING',0,%s,%s,%s)"
+                    " ON CONFLICT (order_id, channel) DO NOTHING",
+                    (order_id, channel, event_id, now, now, now))
+
+    def get_notifications_for_order(self, order_id):
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT order_id, channel, event_id, status, attempts, error_type,"
+                " lease_until, next_retry_at FROM order_notifications WHERE order_id=%s"
+                " ORDER BY channel", (order_id,))
+            cols = ["order_id", "channel", "event_id", "status", "attempts", "error_type",
+                    "lease_until", "next_retry_at"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50):
+        """재시도 대상을 원자적으로 선점(FOR UPDATE SKIP LOCKED + lease + 펜싱 토큰)."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE order_notifications o SET lease_until=%s, lease_token=%s, updated_at=%s"
+                " FROM ("
+                "   SELECT order_id, channel FROM order_notifications"
+                "   WHERE status IN ('PENDING','FAILED')"
+                "     AND (next_retry_at IS NULL OR next_retry_at<=%s)"
+                "     AND (lease_until IS NULL OR lease_until<=%s)"
+                "   ORDER BY created_at LIMIT %s FOR UPDATE SKIP LOCKED) s"
+                " WHERE o.order_id=s.order_id AND o.channel=s.channel"
+                " RETURNING o.order_id, o.channel, o.event_id, o.attempts",
+                (lease_until, lease_token, now, now, now, int(limit)))
+            cols = ["order_id", "channel", "event_id", "attempts"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def mark_notification_sent(self, order_id, channel, now, lease_token):
+        # 펜싱: 현재 lease_token 이 일치할 때만 기록(만료된 이전 worker 덮어쓰기 차단).
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE order_notifications SET status='SENT', lease_until=NULL,"
+                " lease_token=NULL, next_retry_at=NULL, error_type=NULL, updated_at=%s"
+                " WHERE order_id=%s AND channel=%s AND lease_token=%s",
+                (now, order_id, channel, lease_token))
+
+    def mark_notification_failed(self, order_id, channel, now, attempts, next_retry_at,
+                                 error_type, lease_token):
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE order_notifications SET status='FAILED', attempts=%s, next_retry_at=%s,"
+                " lease_until=NULL, lease_token=NULL, error_type=%s, updated_at=%s"
+                " WHERE order_id=%s AND channel=%s AND lease_token=%s",
+                (int(attempts), next_retry_at, error_type, now, order_id, channel, lease_token))
+
+    def mark_notification_unknown(self, order_id, channel, now, attempts, error_type, lease_token):
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE order_notifications SET status='UNKNOWN', attempts=%s, next_retry_at=NULL,"
+                " lease_until=NULL, lease_token=NULL, error_type=%s, updated_at=%s"
+                " WHERE order_id=%s AND channel=%s AND lease_token=%s",
+                (int(attempts), error_type, now, order_id, channel, lease_token))
 
 
 # ---- 주문 생성 / 결제 승인 ----
@@ -369,16 +553,29 @@ def approve_payment(store, payment_key, order_id, amount, confirm_fn=None):
         raise PaymentError("approval not confirmed")
 
     now = _now()
-    store.update_order(order_id, status="PAID", payment_key=payment_key, paid_at=now, updated_at=now)
+    # PAID 전환과 채널별 알림 작업을 원자적으로 기록한다(외부 발송은 drain 에서 분리 실행).
+    # 저장 실패 시 예외를 삼키지 않고 전파한다 → 주문은 PAID 로 올라가지 않고,
+    # 성공 URL 재호출 시 approve_payment 가 멱등 재확인으로 복구한다.
+    notifications = [(ch, notification_event_id(order_id, ch)) for ch in NOTIFY_CHANNELS]
+    store.mark_paid_with_notifications(order_id, payment_key, now, notifications)
     return {"status": "PAID", "orderId": order_id, "idempotent": False}
 
 
 def make_default_store():
-    """운영: DATABASE_URL + 결제 활성 시 Postgres, 그 외 In-Memory."""
+    """운영 저장소 선택.
+
+    - DATABASE_URL 이 있으면 결제 활성 여부와 무관하게 Postgres 를 사용한다
+      (결제 비활성 상태에서도 기존 주문을 조회할 수 있어야 하므로).
+    - Postgres 생성 실패는 조용히 InMemory 로 전환하지 않고 예외를 전파한다
+      (영속 저장소를 기대하는데 휘발성으로 바뀌면 주문 유실이 은폐되기 때문).
+    - DSN 이 없는데 실결제가 활성화되어 있으면 영속 저장소 부재이므로 차단한다
+      (이 함수는 PAYMENTS_ENABLED 를 바꾸지 않는다; 설정 불일치를 기동 시 드러낸다).
+    - DSN 이 없고 결제가 비활성이면 개발·합성 테스트용 InMemory 를 사용한다.
+    """
     dsn = _env("DATABASE_URL")
-    if dsn and payments_enabled():
-        try:
-            return PostgresOrderStore(dsn)
-        except Exception:
-            return InMemoryOrderStore()
+    if dsn:
+        return PostgresOrderStore(dsn)
+    if payments_enabled():
+        raise PaymentConfigError(
+            "real payments require a persistent store (DATABASE_URL); refusing volatile InMemory")
     return InMemoryOrderStore()
