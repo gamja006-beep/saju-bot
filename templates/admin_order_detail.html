@@ -29,11 +29,15 @@
       <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
       {% endfor %}
     </div>
-    {% if o.consultation %}
+    {% if o.report_text %}
+    <h2 class="admin-h2">명리학 보고서 자료</h2>
+    <p class="sub">출생정보가 포함됩니다. 보고서 작성 목적으로만 사용하고 발송 후 안전하게 폐기하세요.</p>
     <div class="admin-actions">
-      <button type="button" id="copy-report" class="btn primary admin-copy">보고서 자료 복사</button>
+      <button type="button" id="copy-report" class="btn primary admin-copy">명리학 보고서 자료 복사</button>
       <span id="copy-status" class="copy-status" aria-live="polite"></span>
     </div>
+    <!-- 복사 대상: 서버에서 생성한 한국어 평문만. 이메일/주문번호/금액/결제키/암호문/경도/내부 JSON 은 포함하지 않는다. -->
+    <pre id="report-package" hidden>{{ o.report_text }}</pre>
     {% endif %}
 
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
@@ -48,27 +52,17 @@
       ta.style.position = "absolute"; ta.style.left = "-9999px";
       document.body.appendChild(ta); ta.select();
       try { document.execCommand("copy"); done(); }
-      catch (e) { if (status) status.textContent = "복사에 실패했습니다."; }
+      catch (e) { if (status) status.textContent = "복사에 실패했어요. 자료 영역을 길게 눌러 직접 복사해 주세요."; }
       document.body.removeChild(ta);
     }
     btn.addEventListener("click", function () {
       var status = document.getElementById("copy-status");
-      // 화면에 이미 표시된 '상담 내용' 섹션만 복사한다.
-      // paymentKey/암호문/DB 내부값/관리자 비밀번호는 DOM 에 없어 복사 대상에 포함되지 않는다.
-      var box = document.getElementById("admin-consultation");
-      var lines = [];
-      if (box) {
-        var rows = box.querySelectorAll(".srow");
-        for (var i = 0; i < rows.length; i++) {
-          var k = rows[i].querySelector(".sk");
-          var v = rows[i].querySelector(".sv");
-          var label = k ? k.textContent.trim() : "";
-          var value = v ? v.textContent.trim() : "";
-          lines.push(label ? (label + ": " + value) : value);
-        }
-      }
-      var text = lines.join("\n");
-      function done() { if (status) status.textContent = "상담 자료를 복사했어요."; }
+      // 서버가 만든 '명리학 보고서 자료' 평문만 복사한다. textContent 로 읽으므로
+      // 저장된 XSS 문자열도 실행되지 않고 문자 그대로 복사된다.
+      // paymentKey/암호문/DB 내부값/관리자 비밀번호는 이 영역에 없어 복사 대상이 아니다.
+      var src = document.getElementById("report-package");
+      var text = src ? src.textContent : "";
+      function done() { if (status) status.textContent = "명리학 보고서 자료를 복사했어요."; }
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, status, done); });
       } else { fallback(text, status, done); }

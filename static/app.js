@@ -543,6 +543,8 @@ function orderPayload() {
   var p = basePayload();
   p.product_code = PRODUCT_CODE[selectedProduct] || "";
   p.email = emailValue();
+  p.alias = val("alias");
+  p.birth_time_status = checked("time_status");  // exact | approx | unknown
   p.consultation_type = checked("consultation_type");
   p.topics = topicsSelected();
   p.question = val("question");

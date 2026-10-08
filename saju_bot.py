@@ -225,15 +225,30 @@ def report_data():
 
 
 # 상품코드(서버) <-> UI 식별자. UI는 FREE 포함, 주문은 유료만.
+_BIRTH_TIME_STATUS = {"exact", "approx", "unknown"}
+
+
+def _normalize_time_status(value):
+    """출생시간 입력 정확도(정확/대략/미상). 허용 외 값은 저장하지 않는다(추정 금지)."""
+    v = _clean_text(value, 10)
+    return v if v in _BIRTH_TIME_STATUS else ""
+
+
 def _consultation_payload(data):
-    """암호화 저장용 상담 자료(이메일 제외). 결제정보와 분리된 상담 스냅샷."""
+    """암호화 저장용 상담 자료(이메일 제외). 결제정보와 분리된 상담 스냅샷.
+
+    alias/birth_time_status 는 명리학 보고서 자료 작성을 위해 함께 저장한다.
+    (암호화 JSON 필드 확장이며 DB 스키마는 변경하지 않는다. 기존 주문에는 없을 수 있다.)
+    """
     return {
         "calendar": data.get("calendar"),
         "birth_date": data.get("birth_date"),
         "is_leap_month": bool(data.get("is_leap_month", False)),
         "gender": data.get("gender"),
         "birth_time": data.get("birth_time"),
+        "birth_time_status": _normalize_time_status(data.get("birth_time_status")),
         "birth_place": data.get("birth_place"),
+        "alias": _clean_text(data.get("alias"), _LIMITS["alias"]),
         "consultation_type": _clean_text(data.get("consultation_type"), 10),
         "topics": [_clean_text(t, 40) for t in (data.get("topics") or [])][:20],
         "question": _clean_text(data.get("question"), 2000),

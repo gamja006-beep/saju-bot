@@ -242,13 +242,15 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn('href="/admin/orders/%s"' % oid, body)
         self.assertIn("상세 보기", body)
 
-    def test_detail_has_copy_button_scoped_to_consultation(self):
+    def test_detail_has_copy_button_scoped_to_report_package(self):
+        # 복사 소스는 서버가 만든 '명리학 보고서 자료' 평문(#report-package)으로 한정한다.
         oid = self._make_paid()
         body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
-        self.assertIn("보고서 자료 복사", body)
+        self.assertIn("명리학 보고서 자료 복사", body)
         self.assertIn('id="copy-report"', body)
-        self.assertIn('id="admin-consultation"', body)
-        self.assertIn('getElementById("admin-consultation")', body)  # 복사 소스 한정
+        self.assertIn('id="admin-consultation"', body)          # 상담 카드는 화면에 그대로 유지
+        self.assertIn('id="report-package"', body)              # 복사 대상 전용 영역
+        self.assertIn('getElementById("report-package")', body)  # 복사 소스 한정
 
     def test_copy_report_source_excludes_forbidden_fields(self):
         oid = self._make_paid(
@@ -294,6 +296,129 @@ class AdminViewerTest(unittest.TestCase):
         with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
             js = f.read()
         self.assertNotIn("/admin", js)
+
+    # ---- 명리학 보고서 작성 자료 (서버 재계산 평문) ----
+    _FULL = {
+        "calendar": "solar", "birth_date": "1990-05-15", "is_leap_month": False,
+        "gender": "남", "birth_time": "14:30", "birth_time_status": "exact",
+        "birth_place": {"country": "KR", "city": "서울", "longitude": 126.978},
+        "alias": "김복남", "consultation_type": "종합", "topics": ["직업", "재물"],
+        "question": "올해 이직해도 될까요?", "situation": "번아웃이 왔어요",
+        "target_period": "2026년 하반기",
+    }
+
+    def _report_text(self, oid):
+        """렌더된 상세 페이지에서 복사 대상(#report-package)의 평문만 추출."""
+        import re
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        m = re.search(r'<pre id="report-package" hidden>(.*?)</pre>', body, re.DOTALL)
+        self.assertIsNotNone(m, "report-package 영역이 없습니다")
+        return m.group(1), body
+
+    def test_report_has_six_sections(self):
+        oid = self._make_paid(payload=dict(self._FULL))
+        report, _ = self._report_text(oid)
+        for sec in ["[명리학 전문 보고서 작성 자료]", "1. 상담 기본정보", "2. 출생 입력정보",
+                    "3. 계산 기준", "4. 사주 명식", "5. 기초 분석자료", "6. 보고서 요청사항"]:
+            self.assertIn(sec, report)
+
+    def test_report_includes_pillars_and_elements(self):
+        oid = self._make_paid(payload=dict(self._FULL))
+        report, _ = self._report_text(oid)
+        for p in ["연주:", "월주:", "일주:", "시주:"]:
+            self.assertIn(p, report)
+        self.assertIn("오행 분포:", report)
+        for el in ["목", "화", "토", "금", "수"]:
+            self.assertIn(el, report)
+        self.assertIn("일간:", report)
+
+    def test_report_time_unknown_excludes_time_pillar(self):
+        payload = dict(self._FULL)
+        payload.update({"birth_time": None, "birth_time_status": "unknown"})
+        oid = self._make_paid(payload=payload)
+        report, _ = self._report_text(oid)
+        self.assertIn("출생시간 상태: 미상", report)
+        self.assertIn("출생시간 미상으로 시주 제외", report)
+
+    def test_report_handles_solar_lunar_and_leap(self):
+        # 양력
+        rs, _ = self._report_text(self._make_paid(payload=dict(self._FULL), pk="pk_s"))
+        self.assertIn("달력: 양력", rs)
+        self.assertIn("윤달 여부: 아니오", rs)
+        # 음력 윤달(1990년 윤5월 10일은 유효한 한국 음력 윤달)
+        leap = dict(self._FULL)
+        leap.update({"calendar": "lunar", "is_leap_month": True, "birth_date": "1990-05-10"})
+        rl, _ = self._report_text(self._make_paid(payload=leap, pk="pk_l"))
+        self.assertIn("달력: 음력", rl)
+        self.assertIn("윤달 여부: 예", rl)
+
+    def test_report_includes_question_situation_topics(self):
+        oid = self._make_paid(payload=dict(self._FULL))
+        report, _ = self._report_text(oid)
+        self.assertIn("올해 이직해도 될까요?", report)
+        self.assertIn("번아웃이 왔어요", report)
+        self.assertIn("직업", report)
+        self.assertIn("재물", report)
+
+    def test_report_missing_fields_marked_na_not_fabricated(self):
+        # 질문/현재상황/별칭/기간 미입력 -> '미입력', 임의 생성 금지.
+        payload = {"calendar": "solar", "birth_date": "1988-11-02", "gender": "여",
+                   "birth_time": "09:05", "birth_time_status": "exact", "consultation_type": "집중"}
+        oid = self._make_paid(payload=payload)
+        report, _ = self._report_text(oid)
+        self.assertIn("고객 질문: 미입력", report)
+        self.assertIn("현재 상황: 미입력", report)
+        self.assertIn("상담 대상 또는 별칭: 미입력", report)
+        self.assertIn("살펴볼 기간: 미입력", report)
+
+    def test_report_compute_failure_is_safe(self):
+        # 명식 계산에 필요한 입력이 없으면 내부 오류/비밀값 없이 안전 안내만 표시.
+        oid = self._make_paid(payload={"consultation_type": "종합", "question": "질문만 있음"})
+        report, body = self._report_text(oid)
+        self.assertIn("명식을 계산할 수 없습니다", report)
+        self.assertNotIn("Traceback", body)
+        self.assertNotIn("SajuInputError", body)
+
+    def test_report_excludes_private_fields(self):
+        oid = self._make_paid(email="customer@example.com", payload=dict(self._FULL), pk="pk_secret_value")
+        report, _ = self._report_text(oid)
+        for bad in ["customer@example.com", oid, "pk_secret_value", "payment_key",
+                    "encrypted_", _FERNET_KEY, "samplesecret", "DATABASE_URL",
+                    "126.978", "99,000", "99000"]:
+            self.assertNotIn(bad, report)
+
+    def test_report_xss_not_executed(self):
+        payload = dict(self._FULL)
+        payload.update({"question": "<script>alert(1)</script>",
+                        "situation": "<img src=x onerror=alert(2)>"})
+        oid = self._make_paid(payload=payload)
+        report, body = self._report_text(oid)
+        # 렌더 결과에 실행 가능한 스크립트/이미지 태그가 없고, 이스케이프되어 들어간다.
+        self.assertNotIn("<script>alert(1)</script>", body)
+        self.assertNotIn("<img src=x onerror=alert(2)>", body)
+        self.assertIn("&lt;script&gt;", report)
+
+    def test_report_shows_disposal_notice(self):
+        oid = self._make_paid(payload=dict(self._FULL))
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("안전하게 폐기", body)
+
+    def test_report_copy_success_message(self):
+        oid = self._make_paid(payload=dict(self._FULL))
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("명리학 보고서 자료를 복사했어요.", body)
+
+    def test_consultation_payload_stores_alias_and_time_status(self):
+        # 신규 주문은 alias/birth_time_status 를 암호화 JSON 에 저장한다(DB 스키마 불변).
+        import saju_bot
+        p = saju_bot._consultation_payload({
+            "alias": "별명", "birth_time_status": "approx", "birth_time": "13:00",
+            "calendar": "solar", "birth_date": "1990-01-01", "gender": "남"})
+        self.assertEqual(p["alias"], "별명")
+        self.assertEqual(p["birth_time_status"], "approx")
+        # 허용 외 값은 저장하지 않는다(추정 금지).
+        p2 = saju_bot._consultation_payload({"birth_time_status": "bogus"})
+        self.assertEqual(p2["birth_time_status"], "")
 
 
 class AdminStoreTest(unittest.TestCase):
