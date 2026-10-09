@@ -488,10 +488,14 @@ class CustomerUITest(unittest.TestCase):
         html = self._read("templates/index.html")
         self.assertIn("전화·화상·대면 상담은 제공하지 않습니다", html)
 
-    def test_expert_badge_only_marked_products(self):
+    def test_paid_products_labeled_as_human_reviewed_not_auto(self):
+        # 실제 제공 방식(담당자 확인 후 이메일, 자동/즉시 아님)과 광고 문구를 일치시킨다.
+        # 과거의 'AI 기반 자동 해석'·'전문가 검토' 분류는 제공하지 못하는 약속이라 제거했다.
         js = self._read("static/app.js")
-        self.assertIn("전문가 검토", js)
-        self.assertIn("AI 기반 자동 해석", js)
+        self.assertIn("담당자 확인 후 이메일", js)
+        self.assertNotIn("AI 기반 자동 해석", js)
+        self.assertNotIn("전문가 검토", js)
+        self.assertNotIn("화면(자동)", js)
 
     def test_payment_disabled(self):
         js = self._read("static/app.js")

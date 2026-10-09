@@ -20,15 +20,17 @@ var CITIES = [
   { name: "속초", lon: 128.592 }
 ];
 
-// 상품: 실제 결제 미연동(준비 중). 'expert' 뱃지는 실제 전문가 검토 상품에만.
+// 상품: 실제 결제 미연동(준비 중). 모든 유료 보고서는 명리 해석 도구로 작성한 뒤 담당자가
+// 확인하여 이메일로 보낸다(자동 즉시 발송 아님). 무료 명식만 화면에서 즉시 제공.
+// 가격은 서버 정본(payments.PRODUCTS)과 일치해야 한다(표시용 문자열).
 var PRODUCTS = [
-  { id: "free", name: "무료 명식", price: "0원", kind: "free", desc: "출생정보로 사주 4주를 즉시 확인합니다.", method: "화면", eta: "즉시" },
-  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "ai", desc: "AI 기반 자동 해석 보고서.", method: "화면(자동)", eta: "즉시~수분" },
-  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "ai", desc: "AI 기반 자동 해석을 이메일로 발송.", method: "이메일", eta: "24시간 이내" },
-  { id: "expert_99000", name: "전문가 보고서", price: "99,000원", kind: "expert", desc: "실제 전문가가 검토하는 보고서.", method: "이메일", eta: "1~3영업일" },
-  { id: "life_290000", name: "인생설계 보고서", price: "290,000원", kind: "ai", desc: "AI 심층 분석 + 비대면 추가질문 1회.", method: "이메일", eta: "영업일 기준 수일" },
-  { id: "relation_590000", name: "관계·사업 보고서", price: "590,000원", kind: "ai", desc: "복수 명식 분석 + 비대면 추가질문 2회.", method: "이메일", eta: "영업일 기준 수일" },
-  { id: "vip_990000", name: "연간 VIP", price: "990,000원", kind: "ai", desc: "연간·분기별 이메일 보고서.", method: "이메일", eta: "연간·분기별" }
+  { id: "free", name: "무료 명식", price: "0원", kind: "free", desc: "출생정보로 사주 4주를 화면에서 바로 확인합니다.", method: "화면", eta: "즉시" },
+  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "paid", desc: "핵심 명리 해석을 정리해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "paid", desc: "주제별 심층 명리 해석을 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "expert_99000", name: "전문가 보고서", price: "99,000원", kind: "paid", desc: "담당자가 직접 검토해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "life_290000", name: "인생설계 보고서", price: "290,000원", kind: "paid", desc: "심층 명리 해석과 비대면 추가질문 1회를 포함해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "relation_590000", name: "관계·사업 보고서", price: "590,000원", kind: "paid", desc: "복수 명식 분석과 비대면 추가질문 2회를 포함해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "vip_990000", name: "연간 VIP", price: "990,000원", kind: "paid", desc: "연간·분기별 보고서를 이메일로 보내 드립니다.", method: "이메일", eta: "연간·분기별(주문 시 안내)" }
 ];
 
 // UI 상품 id -> 서버 상품 코드(정본). FREE는 주문 불가.
@@ -443,9 +445,9 @@ function renderProducts() {
     div.setAttribute("role", "radio");
     div.setAttribute("tabindex", "0");
     div.setAttribute("aria-checked", pr.id === selectedProduct ? "true" : "false");
-    var badge = pr.kind === "expert"
-      ? "<span class=\"badge expert\">전문가 검토</span>"
-      : (pr.kind === "ai" ? "<span class=\"badge ai\">AI 기반 자동 해석</span>" : "");
+    var badge = pr.kind === "free"
+      ? ""
+      : "<span class=\"badge email\">담당자 확인 후 이메일</span>";
     var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
       esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
