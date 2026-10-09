@@ -290,6 +290,22 @@ class InMemoryOrderStore:
             reverse=True)
         return paid[:limit]
 
+    def mark_report_sent(self, order_id, now):
+        """PAID 주문에 한해 report_sent_at 을 '최초 1회만' 기록한다(멱등·중복 클릭 방어).
+
+        보고서 본문·PDF·평문 이메일은 저장하지 않고 완료 시각만 남긴다.
+        반환: (changed, sent_at). changed=False 면 이미 완료이거나 대상(PAID)이 아니다."""
+        self.calls += 1
+        with self._lock:
+            r = self.orders.get(order_id)
+            if not r or r.get("status") != "PAID":
+                return (False, None)
+            if r.get("report_sent_at"):
+                return (False, r["report_sent_at"])
+            r["report_sent_at"] = now
+            r["updated_at"] = now
+            return (True, now)
+
     # ---- 알림 아웃박스 (PAID 전환과 원자적으로 기록) ----
     def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):
         """주문을 PAID 로 올리고 채널별 알림 작업을 같은 임계구역에서 기록한다.
@@ -383,7 +399,8 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     paid_at TIMESTAMPTZ,
-    private_data_expires_at TIMESTAMPTZ
+    private_data_expires_at TIMESTAMPTZ,
+    report_sent_at TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS order_private_data (
     order_id TEXT PRIMARY KEY REFERENCES orders(order_id) ON DELETE CASCADE,
@@ -406,6 +423,7 @@ CREATE TABLE IF NOT EXISTS order_notifications (
     updated_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (order_id, channel)
 );
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS report_sent_at TIMESTAMPTZ;
 """
 
 
@@ -434,13 +452,13 @@ class PostgresOrderStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT order_id, product_code, amount, currency, status, payment_key,"
-                " created_at, updated_at, paid_at, private_data_expires_at"
+                " created_at, updated_at, paid_at, private_data_expires_at, report_sent_at"
                 " FROM orders WHERE order_id = %s", (order_id,))
             row = cur.fetchone()
             if not row:
                 return None
             cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
-                    "created_at", "updated_at", "paid_at", "private_data_expires_at"]
+                    "created_at", "updated_at", "paid_at", "private_data_expires_at", "report_sent_at"]
             return dict(zip(cols, row))
 
     def update_order(self, order_id, **fields):
@@ -478,13 +496,26 @@ class PostgresOrderStore:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT order_id, product_code, amount, currency, status, payment_key,"
-                " created_at, updated_at, paid_at, private_data_expires_at"
+                " created_at, updated_at, paid_at, private_data_expires_at, report_sent_at"
                 " FROM orders WHERE status = %s ORDER BY paid_at DESC LIMIT %s",
                 ("PAID", int(limit)))
             rows = cur.fetchall()
             cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
-                    "created_at", "updated_at", "paid_at", "private_data_expires_at"]
+                    "created_at", "updated_at", "paid_at", "private_data_expires_at", "report_sent_at"]
             return [dict(zip(cols, r)) for r in rows]
+
+    def mark_report_sent(self, order_id, now):
+        """PAID 주문에 한해 report_sent_at 을 최초 1회만 기록(멱등·중복 클릭 방어).
+        WHERE 조건에 status='PAID' AND report_sent_at IS NULL 을 두어 DB 수준에서 보장한다.
+        보고서 본문·PDF·평문 이메일은 저장하지 않는다. 반환: (changed, sent_at)."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE orders SET report_sent_at=%s, updated_at=%s"
+                " WHERE order_id=%s AND status='PAID' AND report_sent_at IS NULL",
+                (now, now, order_id))
+            changed = (cur.rowcount or 0) > 0
+        o = self.get_order(order_id)  # 이미 완료였던 경우의 기존 시각도 반영
+        return (changed, o.get("report_sent_at") if o else None)
 
     # ---- 알림 아웃박스 ----
     def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):

@@ -17,7 +17,10 @@ ORDER_STORE 는 앱 전역 저장소를 지연 참조한다(순환 import 방지
 
 import os
 import json
+import hmac
+import hashlib
 import secrets
+import datetime
 from functools import wraps
 
 from flask import Blueprint, request, Response, render_template, abort, make_response, jsonify
@@ -123,6 +126,37 @@ def _fmt_dt(dt):
 
 def _product_name(code):
     return payments.PRODUCTS.get(code, {}).get("name", code)
+
+
+# ---- 보고서 수동 발송 관리 ----
+def _report_csrf_token(order_id):
+    """CSRF 토큰. 서버 전용 비밀(관리자 비밀번호)로 HMAC. 토큰만 폼에 넣고 비밀은 노출하지 않는다.
+    교차 출처 공격자는 비밀을 모르고 페이지 토큰을 읽을 수도 없어 위조할 수 없다."""
+    _, pw = _admin_credentials()
+    key = (pw or "").encode("utf-8")
+    msg = ("report-sent:" + (order_id or "")).encode("utf-8")
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
+
+
+def _report_csrf_ok(order_id, token):
+    return bool(token) and hmac.compare_digest(_report_csrf_token(order_id), token)
+
+
+def _dispatch_eta_guidance(code):
+    """담당자용 전달기한 안내. 단일 출처(payments.product_delivery_eta)만 사용하고,
+    정확한 마감 '날짜'는 계산·표시하지 않는다('N영업일 이내'만). 미설정이면 그 사실만 알린다."""
+    return payments.product_delivery_eta(code) or "영업일 기준(기한 미설정)"
+
+
+def _dispatch_view(order):
+    """주문의 발송 상태(발송 대기/발송 완료)와 완료 시각·기한 안내(화면용)."""
+    sent_at = order.get("report_sent_at")
+    return {
+        "status_label": "발송 완료" if sent_at else "발송 대기",
+        "sent": bool(sent_at),
+        "sent_at": _fmt_dt(sent_at) if sent_at else "",
+        "eta_guidance": _dispatch_eta_guidance(order.get("product_code")),
+    }
 
 
 def _decrypt_email(store, order_id):
@@ -567,6 +601,9 @@ def admin_orders():
         orders = store.list_paid_orders(limit=_MAX_LIST)
     except Exception:
         abort(500)  # 내부 정보 비노출
+    # 오래된 결제순(먼저 결제한 주문을 먼저 처리). paid_at 없으면 뒤로.
+    _far = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
+    orders = sorted(orders, key=lambda r: r.get("paid_at") or _far)
     rows = []
     for o in orders[:_MAX_LIST]:
         if o.get("status") != "PAID":  # 방어적 재확인
@@ -578,11 +615,12 @@ def admin_orders():
             "currency": o.get("currency", "KRW"),
             "paid_at": _fmt_dt(o.get("paid_at")),
             "email_masked": _mask_email(_decrypt_email(store, o.get("order_id"))),
+            "dispatch": _dispatch_view(o),
         })
     return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows)))
 
 
-def _build_order_detail_view(store, order, order_id, retry_result=None):
+def _build_order_detail_view(store, order, order_id, retry_result=None, dispatch_result=None):
     """주문 상세 화면 데이터. PII/비밀값 없는 한국어 표시 전용(payment_key·만료일 등 제외)."""
     payload = _decrypt_payload(store, order_id)  # 한 번만 복호화
     return {
@@ -597,6 +635,9 @@ def _build_order_detail_view(store, order, order_id, retry_result=None):
         "notifications": _humanize_notifications(store, order_id),
         "notify": notifier.notify_status_view(),
         "retry_result": retry_result,  # 수동 재전송 결과 메시지(없으면 None)
+        "dispatch": _dispatch_view(order),            # 발송 상태·기한 안내
+        "report_csrf": _report_csrf_token(order_id),  # 발송 완료 기록 폼 CSRF 토큰
+        "dispatch_result": dispatch_result,           # 발송 완료 기록 결과 메시지
     }
 
 
@@ -649,6 +690,32 @@ def admin_order_notifications_retry(order_id):
         abort(500)  # 내부 오류·비밀값 비노출
     view = _build_order_detail_view(store, order, order_id,
                                     retry_result=_retry_result_message(summary))
+    return _with_noindex(render_template("admin_order_detail.html", o=view))
+
+
+@admin_bp.route("/admin/orders/<order_id>/report/mark-sent", methods=["POST"])
+@require_admin
+def admin_order_mark_report_sent(order_id):
+    """담당자가 외부 이메일로 실제 보고서를 보낸 뒤, 완료 시각만 수동 기록한다(POST 전용).
+
+    - 이 요청은 이메일·PDF 를 발송하지 않는다. report_sent_at 시각만 저장한다.
+    - CSRF 토큰 검증 + PAID 전용 + 최초 1회만 기록(중복 클릭 방어: 저장소가 멱등 처리)."""
+    if not _report_csrf_ok(order_id, request.form.get("csrf_token")):
+        abort(400)  # CSRF 토큰 불일치/누락
+    store = _get_store()
+    try:
+        order = store.get_order(order_id)
+    except Exception:
+        abort(500)
+    if not order or order.get("status") != "PAID":
+        abort(404)
+    try:
+        changed, _sent_at = store.mark_report_sent(order_id, payments._now())
+    except Exception:
+        abort(500)  # 내부 오류·비밀값 비노출
+    msg = "발송 완료로 기록했습니다." if changed else "이미 발송 완료로 기록된 주문입니다."
+    order = store.get_order(order_id) or order  # 갱신된 완료 시각 반영
+    view = _build_order_detail_view(store, order, order_id, dispatch_result=msg)
     return _with_noindex(render_template("admin_order_detail.html", o=view))
 
 

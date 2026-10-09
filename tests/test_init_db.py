@@ -59,14 +59,16 @@ class InitDbTest(unittest.TestCase):
     def test_create_statements_executed_once(self):
         fake = FakeConn()
         n = init_db.init_schema(connect=lambda dsn: fake)
-        # orders, order_private_data, order_notifications 3개 테이블.
-        self.assertEqual(n, 3)
-        self.assertEqual(len(fake.executed), 3)
+        # orders, order_private_data, order_notifications 3개 테이블 + report_sent_at ALTER 1개.
+        self.assertEqual(n, 4)
+        self.assertEqual(len(fake.executed), 4)
         creates = [s for s in fake.executed if "CREATE TABLE" in s]
         self.assertEqual(len(creates), 3)
         self.assertTrue(any("orders" in s for s in fake.executed))
         self.assertTrue(any("order_private_data" in s for s in fake.executed))
         self.assertTrue(any("order_notifications" in s for s in fake.executed))
+        # 기존 배포에도 안전한 멱등 ALTER(IF NOT EXISTS) 로 report_sent_at 추가.
+        self.assertTrue(any("ADD COLUMN IF NOT EXISTS report_sent_at" in s for s in fake.executed))
         self.assertTrue(fake.committed)
         self.assertFalse(fake.rolledback)
         self.assertTrue(fake.closed)
