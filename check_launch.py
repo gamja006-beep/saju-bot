@@ -25,35 +25,37 @@ import payments
 PASS = "통과"
 PENDING = "미완료"
 
-# 상품 전달기한에서 '아직 확정 안 됨'을 뜻하는 자리표시 문구.
-_ETA_PLACEHOLDER = "주문 시 안내"
+# 상품 전달기한에서 '아직 확정 안 됨'을 뜻하는 표식(자리표시 또는 '제안').
+_ETA_UNRESOLVED = ("주문 시 안내", "제안")
 # 법적 고지에서 '미확정'을 뜻하는 표식(legal_pages.PENDING 과 동일).
 _LEGAL_PENDING = legal_pages.PENDING
-
-
-def _env(name, env):
-    return (env.get(name) or "").strip()
 
 
 def _result(key, label, ok, detail=""):
     return {"key": key, "label": label, "status": PASS if ok else PENDING, "detail": detail}
 
 
-def check_business_info(env):
-    """사업자 표시 정보(상호 제외 필수 항목). 값은 출력하지 않고 환경변수 이름만 쓴다."""
-    fields = [("BIZ_REPRESENTATIVE", "대표자"), ("BIZ_REG_NO", "사업자등록번호"),
-              ("BIZ_MAIL_ORDER_NO", "통신판매업 신고번호(또는 해당없음 상태)"),
-              ("BIZ_ADDRESS", "사업장 주소")]
-    missing = [name for name, _ in fields if not _env(name, env)]
-    detail = "" if not missing else "미설정 환경변수: " + ", ".join(missing)
+def _blank(info, key):
+    return not str(info.get(key) or "").strip()
+
+
+def check_business_info(info=None):
+    """사업자 표시 정보. 확정된 값은 legal_pages.business_info() 기본값으로 통과하고,
+    미확정 항목(주소·통신판매업 신고 상태)은 환경변수 이름만 들어 미완료로 보고한다."""
+    info = legal_pages.business_info() if info is None else info
+    fields = [("representative", "BIZ_REPRESENTATIVE"), ("reg_no", "BIZ_REG_NO"),
+              ("mail_order_no", "BIZ_MAIL_ORDER_NO(통신판매업 신고 상태)"), ("address", "BIZ_ADDRESS")]
+    missing = [env for key, env in fields if _blank(info, key)]
+    detail = "" if not missing else "미확정: " + ", ".join(missing)
     return _result("business_info", "사업자 표시 정보", not missing, detail)
 
 
-def check_contact(env):
-    """고객 문의처(전화·이메일)."""
-    fields = [("BIZ_PHONE", "전화"), ("BIZ_EMAIL", "이메일")]
-    missing = [name for name, _ in fields if not _env(name, env)]
-    detail = "" if not missing else "미설정 환경변수: " + ", ".join(missing)
+def check_contact(info=None):
+    """고객 문의처(전화·이메일). 값은 출력하지 않고 환경변수 이름만 쓴다."""
+    info = legal_pages.business_info() if info is None else info
+    fields = [("phone", "BIZ_PHONE"), ("email", "BIZ_EMAIL")]
+    missing = [env for key, env in fields if _blank(info, key)]
+    detail = "" if not missing else "미확정: " + ", ".join(missing)
     return _result("contact", "고객 문의처", not missing, detail)
 
 
@@ -88,12 +90,12 @@ def _app_js_text(app_js=None):
 
 
 def check_product_eta(app_js=None):
-    """상품별 전달기한이 자리표시('주문 시 안내')로 남아 있는지 확인한다."""
+    """상품별 전달기한이 자리표시('주문 시 안내')나 '제안'으로 남아 있는지 확인한다.
+    '제안'(운영 확인 전)도 확정 전이므로 미완료로 본다."""
     text = _app_js_text(app_js)
     etas = re.findall(r'eta:\s*"([^"]*)"', text)
-    unresolved = [e for e in etas if _ETA_PLACEHOLDER in e]
-    detail = "" if not unresolved else "자리표시 전달기한 %d개(상품 안내 화면 '%s')" % (
-        len(unresolved), _ETA_PLACEHOLDER)
+    unresolved = [e for e in etas if any(m in e for m in _ETA_UNRESOLVED)]
+    detail = "" if not unresolved else "미확정 전달기한 %d개(자리표시 또는 '제안')" % len(unresolved)
     return _result("product_eta", "상품별 전달기한", not unresolved, detail)
 
 
@@ -121,12 +123,12 @@ def check_payment_config():
     return _result("payment", "결제 모드·키 조합", ok, detail)
 
 
-def run_checks(env=None, app_js=None):
+def run_checks(app_js=None, info=None):
     """모든 점검을 수행하고 결과 리스트를 돌려준다(부작용 없음)."""
-    env = os.environ if env is None else env
+    info = legal_pages.business_info() if info is None else info
     return [
-        check_business_info(env),
-        check_contact(env),
+        check_business_info(info),
+        check_contact(info),
         check_legal_pending(),
         check_product_eta(app_js),
         check_expert_claim(app_js),

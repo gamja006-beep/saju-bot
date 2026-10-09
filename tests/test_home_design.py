@@ -148,10 +148,14 @@ class LegalPagesTest(_EnvCase):
         self.assertNotIn("<script>alert(1)</script>", body)
         self.assertIn("&lt;script&gt;", body)
 
-    def test_no_invented_registration_numbers(self):
+    def test_confirmed_reg_no_shown_and_no_invented_mail_order_no(self):
+        # 사업자등록번호는 확정값(564-05-02583)으로 표기하되, 통신판매업 신고 상태·주소 등
+        # 미확정 항목은 '입력 대기'로 남기고 환불 '일절 불가' 문구는 쓰지 않는다.
         body = self.c.get("/refund").get_data(as_text=True)
-        self.assertNotRegex(body, r"\d{3}-\d{2}-\d{5}")
+        self.assertIn("564-05-02583", body)
+        self.assertIn("입력 대기", body)
         self.assertNotIn("무조건 환불 불가", body)
+        self.assertNotIn("환불이 불가능", body)
 
 
 class FreePayloadWarningsTest(unittest.TestCase):

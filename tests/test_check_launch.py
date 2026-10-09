@@ -70,6 +70,11 @@ class StatusHelpersTest(unittest.TestCase):
     def test_product_eta_resolved_is_pass(self):
         self.assertEqual(check_launch.check_product_eta(_CLEAN_JS)["status"], check_launch.PASS)
 
+    def test_product_eta_proposal_is_pending(self):
+        # '제안'(운영 확인 전)도 확정 전이므로 차단 대상이다.
+        js = 'x eta: "3영업일(제안, 운영 확인 전)"'
+        self.assertEqual(check_launch.check_product_eta(js)["status"], check_launch.PENDING)
+
     def test_expert_claim_present_is_pending(self):
         self.assertEqual(check_launch.check_expert_claim(_EXPERT_JS)["status"], check_launch.PENDING)
 
@@ -77,17 +82,31 @@ class StatusHelpersTest(unittest.TestCase):
         self.assertEqual(check_launch.check_expert_claim(_CLEAN_JS)["status"], check_launch.PASS)
 
     def test_business_info_missing_is_pending(self):
-        r = check_launch.check_business_info({})
+        r = check_launch.check_business_info({})  # 해소된 정보 dict 가 비어 있으면 전부 미확정
         self.assertEqual(r["status"], check_launch.PENDING)
-        self.assertIn("BIZ_REPRESENTATIVE", r["detail"])
+        self.assertIn("BIZ_ADDRESS", r["detail"])
 
     def test_business_info_complete_is_pass(self):
-        env = {}
-        _fill_business(env)
-        self.assertEqual(check_launch.check_business_info(env)["status"], check_launch.PASS)
+        info = {"representative": "오준영", "reg_no": "564-05-02583",
+                "mail_order_no": "미신고(확정)", "address": "서울시 ○○구 1-2"}
+        self.assertEqual(check_launch.check_business_info(info)["status"], check_launch.PASS)
 
-    def test_contact_missing_is_pending(self):
-        self.assertEqual(check_launch.check_contact({})["status"], check_launch.PENDING)
+    def test_business_info_confirmed_defaults_pass_but_address_blocks(self):
+        # 환경변수가 없어도 대표자·등록번호는 확정 기본값으로 통과하되, 주소 미확정이면 차단된다.
+        import legal_pages as lp
+        info = lp.business_info()  # 기본값 포함(주소/전화/신고상태는 비어 있음)
+        self.assertEqual(info["representative"], "오준영")
+        self.assertEqual(info["reg_no"], "564-05-02583")
+        r = check_launch.check_business_info(info)
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("BIZ_ADDRESS", r["detail"])
+
+    def test_contact_missing_phone_is_pending_even_with_email_default(self):
+        import legal_pages as lp
+        info = lp.business_info()  # email 은 기본값 존재, phone 은 비어 있음
+        r = check_launch.check_contact(info)
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("BIZ_PHONE", r["detail"])
 
 
 class RealArtifactsTest(_EnvCase):

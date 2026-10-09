@@ -25,8 +25,8 @@ var CITIES = [
 // 가격은 서버 정본(payments.PRODUCTS)과 일치해야 한다(표시용 문자열).
 var PRODUCTS = [
   { id: "free", name: "무료 명식", price: "0원", kind: "free", desc: "출생정보로 사주 4주를 화면에서 바로 확인합니다.", method: "화면", eta: "즉시" },
-  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "paid", desc: "핵심 명리 해석을 정리해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
-  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "paid", desc: "주제별 심층 명리 해석을 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
+  { id: "basic_9900", name: "기본 해석", price: "9,900원", kind: "paid", desc: "핵심 명리 해석을 정리해 이메일로 보내 드립니다.", method: "이메일", eta: "3영업일(제안, 운영 확인 전)" },
+  { id: "deep_39000", name: "심층 보고서", price: "39,000원", kind: "paid", desc: "주제별 심층 명리 해석을 이메일로 보내 드립니다.", method: "이메일", eta: "5영업일(제안, 운영 확인 전)" },
   { id: "expert_99000", name: "전문가 보고서", price: "99,000원", kind: "paid", desc: "담당자가 직접 검토해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
   { id: "life_290000", name: "인생설계 보고서", price: "290,000원", kind: "paid", desc: "심층 명리 해석과 비대면 추가질문 1회를 포함해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
   { id: "relation_590000", name: "관계·사업 보고서", price: "590,000원", kind: "paid", desc: "복수 명식 분석과 비대면 추가질문 2회를 포함해 이메일로 보내 드립니다.", method: "이메일", eta: "영업일 기준(주문 시 안내)" },
