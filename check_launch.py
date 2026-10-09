@@ -39,22 +39,33 @@ def _blank(info, key):
     return not str(info.get(key) or "").strip()
 
 
-def check_business_info(info=None):
-    """사업자 표시 정보. 확정된 값은 legal_pages.business_info() 기본값으로 통과하고,
-    미확정 항목(주소·통신판매업 신고 상태)은 환경변수 이름만 들어 미완료로 보고한다."""
+def check_business_info(info=None, env=None):
+    """사업자 표시 정보. 상호·대표자·등록번호·통신판매업 신고번호는 확정값으로 통과한다.
+    주소는 동·호수 없는 '초안'만 있으므로, 최종 공개 표기를 BIZ_ADDRESS 로 설정하기 전에는
+    (화면 표시와 무관하게) 차단한다."""
     info = legal_pages.business_info() if info is None else info
-    fields = [("representative", "BIZ_REPRESENTATIVE"), ("reg_no", "BIZ_REG_NO"),
-              ("mail_order_no", "BIZ_MAIL_ORDER_NO(통신판매업 신고 상태)"), ("address", "BIZ_ADDRESS")]
-    missing = [env for key, env in fields if _blank(info, key)]
+    env = os.environ if env is None else env
+    missing = []
+    for key, name in [("representative", "BIZ_REPRESENTATIVE"), ("reg_no", "BIZ_REG_NO"),
+                      ("mail_order_no", "BIZ_MAIL_ORDER_NO")]:
+        if _blank(info, key):
+            missing.append(name)
+    if not (env.get("BIZ_ADDRESS") or "").strip():
+        missing.append("BIZ_ADDRESS(주소 공개 표기 확정)")
     detail = "" if not missing else "미확정: " + ", ".join(missing)
     return _result("business_info", "사업자 표시 정보", not missing, detail)
 
 
-def check_contact(info=None):
-    """고객 문의처(전화·이메일). 값은 출력하지 않고 환경변수 이름만 쓴다."""
+def check_contact(info=None, env=None):
+    """고객 문의처. 이메일은 확정값으로 통과하되, 문의 전화는 미정이므로 BIZ_PHONE 설정 전까지
+    차단한다(비대면 이메일 운영 유지, 전화·화상 상담 기능은 추가하지 않음). 값은 출력하지 않는다."""
     info = legal_pages.business_info() if info is None else info
-    fields = [("phone", "BIZ_PHONE"), ("email", "BIZ_EMAIL")]
-    missing = [env for key, env in fields if _blank(info, key)]
+    env = os.environ if env is None else env
+    missing = []
+    if _blank(info, "email"):
+        missing.append("BIZ_EMAIL")
+    if not (env.get("BIZ_PHONE") or "").strip():
+        missing.append("BIZ_PHONE")
     detail = "" if not missing else "미확정: " + ", ".join(missing)
     return _result("contact", "고객 문의처", not missing, detail)
 
@@ -123,12 +134,13 @@ def check_payment_config():
     return _result("payment", "결제 모드·키 조합", ok, detail)
 
 
-def run_checks(app_js=None, info=None):
+def run_checks(app_js=None, info=None, env=None):
     """모든 점검을 수행하고 결과 리스트를 돌려준다(부작용 없음)."""
     info = legal_pages.business_info() if info is None else info
+    env = os.environ if env is None else env
     return [
-        check_business_info(info),
-        check_contact(info),
+        check_business_info(info, env),
+        check_contact(info, env),
         check_legal_pending(),
         check_product_eta(app_js),
         check_expert_claim(app_js),

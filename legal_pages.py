@@ -25,14 +25,15 @@ def business_info():
     def pick(name):
         return (os.environ.get(name) or "").strip()[:200]
     # 확정된 공개 사업자 식별 정보(비밀 아님, 전자상거래법상 표시 의무 항목)는 기본값으로 둔다.
-    # 환경변수(BIZ_*)가 있으면 그 값이 우선한다. 주소·전화·통신판매업 신고 상태는 아직
-    # 확정되지 않아(아파트 동·호수 포함 주소 공개 표기 미정 등) 기본값 없이 '입력 대기'로 남긴다.
+    # 환경변수(BIZ_*)가 있으면 그 값이 우선한다.
+    # 주소는 동·호수 없이 일부만 표기한 '초안'을 화면에 보여 주되, 공개 표기 확정과
+    # 라이브 결제 준비는 별도 판단한다(payments.launch_blockers 참고). 전화는 미정이라 비워 둔다.
     return {
         "name": pick("BIZ_NAME") or "알파랩",
         "representative": pick("BIZ_REPRESENTATIVE") or "오준영",
         "reg_no": pick("BIZ_REG_NO") or "564-05-02583",
-        "mail_order_no": pick("BIZ_MAIL_ORDER_NO"),
-        "address": pick("BIZ_ADDRESS"),
+        "mail_order_no": pick("BIZ_MAIL_ORDER_NO") or "2025-고양덕양구-2991 (신고기관: 고양시 덕양구청)",
+        "address": pick("BIZ_ADDRESS") or "경기도 고양시 덕양구 중앙로558번길 57",
         "phone": pick("BIZ_PHONE"),
         "email": pick("BIZ_EMAIL") or "wroklabs@gmail.com",
         "pending": PENDING,

@@ -112,6 +112,34 @@ def payments_enabled():
     return config_status()["enabled"]
 
 
+def launch_blockers():
+    """라이브(live) 결제를 열기 전 반드시 해소해야 하는 미확정 운영 항목.
+
+    - 사업장 주소 공개 표기: 현재 동·호수 없는 초안만 있으므로, 최종 공개 표기를
+      BIZ_ADDRESS 로 명시 설정하기 전에는 차단한다(기본 표시값 존재와 무관).
+    - 고객 문의 전화: 아직 미정이므로 BIZ_PHONE 설정 전에는 차단한다.
+    비대면 이메일 운영은 유지하며, 전화·화상 상담 기능을 요구하지는 않는다(연락 수단 표기만).
+    반환: 미확정 사유 문자열 리스트(없으면 빈 리스트).
+    """
+    reasons = []
+    if not _env("BIZ_ADDRESS"):
+        reasons.append("사업장 주소 공개 표기 미확정(BIZ_ADDRESS)")
+    if not _env("BIZ_PHONE"):
+        reasons.append("고객 문의 전화 미정(BIZ_PHONE)")
+    return reasons
+
+
+def live_payments_ready():
+    """실(live) 결제를 열어도 되는지. 설정상 enabled 이고, live 모드라면 미확정 운영 항목이
+    없어야 True. test 모드는 이 가드의 영향을 받지 않는다(합성 테스트 흐름 유지)."""
+    st = config_status()
+    if not st["enabled"]:
+        return False
+    if st["mode"] == "live" and launch_blockers():
+        return False
+    return True
+
+
 def client_config():
     """브라우저로 전달 가능한 설정만. 시크릿/암호화 키는 절대 포함하지 않는다."""
     st = config_status()

@@ -82,29 +82,30 @@ class StatusHelpersTest(unittest.TestCase):
         self.assertEqual(check_launch.check_expert_claim(_CLEAN_JS)["status"], check_launch.PASS)
 
     def test_business_info_missing_is_pending(self):
-        r = check_launch.check_business_info({})  # 해소된 정보 dict 가 비어 있으면 전부 미확정
+        r = check_launch.check_business_info({}, {})  # 정보/환경변수 모두 비면 전부 미확정
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("BIZ_ADDRESS", r["detail"])
 
     def test_business_info_complete_is_pass(self):
         info = {"representative": "오준영", "reg_no": "564-05-02583",
-                "mail_order_no": "미신고(확정)", "address": "서울시 ○○구 1-2"}
-        self.assertEqual(check_launch.check_business_info(info)["status"], check_launch.PASS)
+                "mail_order_no": "2025-고양덕양구-2991"}
+        env = {"BIZ_ADDRESS": "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"}
+        self.assertEqual(check_launch.check_business_info(info, env)["status"], check_launch.PASS)
 
     def test_business_info_confirmed_defaults_pass_but_address_blocks(self):
-        # 환경변수가 없어도 대표자·등록번호는 확정 기본값으로 통과하되, 주소 미확정이면 차단된다.
+        # 신고번호·대표자·등록번호는 확정 기본값으로 통과하되, 주소 공개표기(BIZ_ADDRESS) 미설정이면 차단.
         import legal_pages as lp
-        info = lp.business_info()  # 기본값 포함(주소/전화/신고상태는 비어 있음)
+        info = lp.business_info()  # 주소는 초안 기본값이 보이지만 BIZ_ADDRESS 환경변수는 비어 있음
         self.assertEqual(info["representative"], "오준영")
         self.assertEqual(info["reg_no"], "564-05-02583")
-        r = check_launch.check_business_info(info)
+        r = check_launch.check_business_info(info, {})
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("BIZ_ADDRESS", r["detail"])
 
     def test_contact_missing_phone_is_pending_even_with_email_default(self):
         import legal_pages as lp
         info = lp.business_info()  # email 은 기본값 존재, phone 은 비어 있음
-        r = check_launch.check_contact(info)
+        r = check_launch.check_contact(info, {})
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("BIZ_PHONE", r["detail"])
 
@@ -174,6 +175,49 @@ class SafetyTest(_EnvCase):
         for bad in ("자동으로 삭제합니다", "자동 삭제됩니다", "자동으로 파기합니다", "90일 후 삭제"):
             self.assertNotIn(bad, out)
         self.assertIn("자동으로 삭제되지 않", out)  # 미가동 사실을 명시
+
+
+class LivePaymentGuardTest(_EnvCase):
+    def _set_live_keys(self):
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "live"
+        os.environ["TOSS_CLIENT_KEY"] = "live_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "live_sk_x"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+
+    def test_launch_blockers_lists_address_and_phone_when_unset(self):
+        joined = " ".join(payments.launch_blockers())
+        self.assertIn("BIZ_ADDRESS", joined)
+        self.assertIn("BIZ_PHONE", joined)
+
+    def test_launch_blockers_empty_when_both_set(self):
+        os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
+        os.environ["BIZ_PHONE"] = "031-000-0000"
+        self.assertEqual(payments.launch_blockers(), [])
+
+    def test_live_payments_blocked_until_address_and_phone_set(self):
+        self._set_live_keys()
+        self.assertTrue(payments.payments_enabled())      # 설정상으로는 enabled
+        self.assertFalse(payments.live_payments_ready())  # 주소·전화 미확정 → live 미준비
+        os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
+        os.environ["BIZ_PHONE"] = "031-000-0000"
+        self.assertTrue(payments.live_payments_ready())
+
+    def test_test_mode_not_blocked_by_guard(self):
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "test"
+        os.environ["TOSS_CLIENT_KEY"] = "test_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+        self.assertTrue(payments.live_payments_ready())  # test 모드는 가드 영향 없음
+
+    def test_api_orders_blocks_live_without_address_and_phone(self):
+        import saju_bot
+        self._set_live_keys()  # 주소·전화 미설정
+        c = saju_bot.app.test_client()
+        r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.get_json().get("code"), "launch_incomplete")
 
 
 if __name__ == "__main__":
