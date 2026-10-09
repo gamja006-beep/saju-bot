@@ -1,13 +1,14 @@
 import os
 import unicodedata
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 
 from saju_engine import compute_saju, SajuInputError
 import saju_insights
 import payments
 import notifier
 import admin
+import legal_pages
 
 app = Flask(__name__)
 
@@ -139,7 +140,33 @@ def build_report_data(data):
 
 @app.route('/', methods=['GET'])
 def index():
-    return render_template('index.html', pay=payments.client_config())
+    # CANONICAL_HOST 설정 시 루트 도메인의 홈만 www 로 보낸다(미설정이면 항상 통과).
+    # 결제 성공·실패·웹훅·API 경로는 이동시키지 않는다.
+    target = legal_pages.canonical_redirect(request.host)
+    if target:
+        return redirect(target, code=302)
+    return render_template('index.html', pay=payments.client_config(),
+                           biz=legal_pages.business_info())
+
+
+def _legal_page(key):
+    return render_template('legal.html', doc=legal_pages.document(key),
+                           biz=legal_pages.business_info())
+
+
+@app.route('/terms', methods=['GET'])
+def terms():
+    return _legal_page('terms')
+
+
+@app.route('/privacy', methods=['GET'])
+def privacy():
+    return _legal_page('privacy')
+
+
+@app.route('/refund', methods=['GET'])
+def refund():
+    return _legal_page('refund')
 
 
 @app.route('/health', methods=['GET'])

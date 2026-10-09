@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ doc.title }} · 행운 사주풀이</title>
+  <link rel="stylesheet" href="/static/home.css">
+</head>
+<body>
+  <div class="wrap legal">
+    <header class="site-top">
+      <a class="brand" href="/"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M78 8 C44 14 22 42 22 70 C22 100 48 118 78 114 C56 104 46 86 46 66 C46 42 58 22 78 8 Z" fill="#E3B65C"></path></svg>행운 사주풀이</a>
+    </header>
+    <main>
+      <h1>{{ doc.title }}</h1>
+      <p class="legal-notice">{{ doc.notice }}</p>
+      {% for s in doc.sections %}
+      <section class="legal-sec">
+        <h2>{{ s.h }}</h2>
+        {% for p in s.p %}<p>{{ p }}</p>{% endfor %}
+        {% if s.li %}<ul>{% for i in s.li %}<li>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </section>
+      {% endfor %}
+      <section class="legal-sec">
+        <h2>사업자 정보와 문의</h2>
+        <dl class="biz">
+          <dt>상호</dt><dd>{{ biz.name }}</dd>
+          <dt>대표자</dt><dd>{{ biz.representative or biz.pending }}</dd>
+          <dt>사업자등록번호</dt><dd>{{ biz.reg_no or biz.pending }}</dd>
+          <dt>통신판매업 신고번호</dt><dd>{{ biz.mail_order_no or biz.pending }}</dd>
+          <dt>주소</dt><dd>{{ biz.address or biz.pending }}</dd>
+          <dt>전화</dt><dd>{{ biz.phone or biz.pending }}</dd>
+          <dt>이메일</dt><dd>{{ biz.email or biz.pending }}</dd>
+        </dl>
+      </section>
+      <p><a class="cta-link" href="/">처음으로 돌아가기</a></p>
+    </main>
+    <footer class="foot">
+      <p class="foot-links"><a href="/terms">이용약관</a> · <a href="/privacy">개인정보처리방침</a> · <a href="/refund">환불 안내</a></p>
+    </footer>
+  </div>
+</body>
+</html>

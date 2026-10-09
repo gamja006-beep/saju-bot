@@ -2,18 +2,37 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <title>사주 상담 입력</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>행운 사주풀이</title>
+  <meta name="description" content="명식 근거부터 실행 제안까지, 근거가 보이는 나의 사주 보고서">
+  <link rel="stylesheet" href="/static/home.css">
 </head>
 <body>
-  <main class="app">
-    <header class="top">
-      <h1>사주 상담</h1>
-      <p class="sub">회원가입 없이 바로 이용하세요</p>
-      <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
-      <p class="step-label" id="step-label">1 / 8</p>
+  <div class="wrap">
+    <header class="site-top">
+      <a class="brand" href="/"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M78 8 C44 14 22 42 22 70 C22 100 48 118 78 114 C56 104 46 86 46 66 C46 42 58 22 78 8 Z" fill="#E3B65C"></path></svg>행운 사주풀이</a>
+      <button type="button" class="text-toggle" id="large-toggle" aria-pressed="false">큰 글씨</button>
     </header>
+
+    <section class="hero">
+      <div class="hero-copy">
+        <h1>근거가 보이는<br>나의 사주 보고서</h1>
+        <p class="hero-lead">명식 근거부터 실행 제안까지, 차근차근 읽을 수 있게 정리해 드려요.</p>
+        <ul class="points">
+          <li>생년월일 등 몇 가지만 하나씩 고르면 무료 명식이 나와요.</li>
+          <li>AI 기반 자동 해석과 전문가 검토를 나눠서 표시해요.</li>
+          <li>전화나 방문 없이 화면과 이메일로만 받아요.</li>
+        </ul>
+        <a class="cta-link" href="#start">무료 명식 시작하기</a>
+      </div>
+      <div class="hero-form" id="start">
+        <main class="app">
+          <header class="top">
+            <h2>무료 명식 먼저 보기</h2>
+            <p class="sub">회원가입 없이 바로 이용하세요</p>
+            <div class="progress"><div class="progress-bar" id="progress-bar"></div></div>
+            <p class="step-label" id="step-label">1 / 8</p>
+          </header>
 
     <form id="intake" novalidate>
       <!-- STEP 1: 상담 유형 -->
@@ -140,6 +159,7 @@
           본 결과는 명리학 참고용이며 미래를 확정적으로 단정하지 않습니다.
           한국 음력은 KASI 기준이나 전체 정확성은 독립 검증 전까지 확정되지 않았습니다.
         </p>
+        <p class="hint">결제 전에 <a href="/terms" target="_blank" rel="noopener">이용약관</a>과 <a href="/refund" target="_blank" rel="noopener">환불 안내</a>를 확인해 주세요.</p>
         <div id="complete-area"></div>
       </section>
 
@@ -149,7 +169,57 @@
       </div>
       <p id="form-error" class="form-error" aria-live="polite"></p>
     </form>
-  </main>
+        </main>
+      </div>
+    </section>
+
+    <section class="block" id="report">
+      <p class="eyebrow">보고서 구성</p>
+      <h2>보고서는 이렇게 쓰여요</h2>
+      <p class="hero-lead">제공된 사주 명식을 바탕으로 일간·월령, 오행과 십성의 배치와 서로의 관계를 종합해서 살펴봐요.</p>
+      <div class="cards">
+        <div class="info-card"><div class="num">1</div><h3>명식 근거</h3><p>어떤 글자와 배치를 보고 말하는지 먼저 보여 드려요.</p></div>
+        <div class="info-card"><div class="num">2</div><h3>명리적 해석</h3><p>성향과 강점, 관계의 특성을 풀어서 설명해요.</p></div>
+        <div class="info-card"><div class="num">3</div><h3>현실 적용</h3><p>연령과 상담 목적에 맞춰 일상에 적용해 봐요.</p></div>
+        <div class="info-card"><div class="num">4</div><h3>실행 제안</h3><p>해 볼 만한 일을 정리해서 제안해 드려요.</p></div>
+      </div>
+    </section>
+
+    <section class="block" id="flow">
+      <h2>이렇게 진행돼요</h2>
+      <div class="cards">
+        <div class="info-card"><div class="num">1</div><h3>정보 입력</h3><p>생년월일, 태어난 시간과 지역, 궁금한 주제를 하나씩 골라요.</p></div>
+        <div class="info-card"><div class="num">2</div><h3>무료 요약 보기</h3><p>사주 4주와 성향 요약을 바로 확인해요. 마음에 들면 공유할 수 있어요.</p></div>
+        <div class="info-card"><div class="num">3</div><h3>보고서 고르기</h3><p>더 알고 싶으면 상품을 비교해서 고르고, 화면 또는 이메일로 받아요.</p></div>
+      </div>
+    </section>
+
+    <section class="block" id="soon">
+      <h2>준비 중인 기능</h2>
+      <p class="hero-lead">아직 사용할 수 없고, 준비가 되면 이 자리에서 알려 드릴게요.</p>
+      <div class="cards">
+        <div class="info-card"><span class="soon">준비 중</span><h3>내 노트</h3><p>받은 보고서를 한곳에 모아 다시 볼 수 있어요.</p></div>
+        <div class="info-card"><span class="soon">준비 중</span><h3>궁합 초대 링크</h3><p>친구에게 링크를 보내 두 사람의 결과를 함께 봐요.</p></div>
+        <div class="info-card"><span class="soon">준비 중</span><h3>보고서 선물하기</h3><p>부모님이나 가족에게 보고서를 선물해요.</p></div>
+      </div>
+    </section>
+
+    <section class="block" id="trust">
+      <h2>믿고 맡기실 수 있도록</h2>
+      <div class="cards">
+        <div class="info-card"><h3>풀이 방식을 구분해요</h3><p>AI 기반 자동 해석과 전문가 검토를 상품마다 나눠서 표시해요.</p></div>
+        <div class="info-card"><h3>무료로 먼저 확인해요</h3><p>무료 명식과 요약을 먼저 보고 보고서를 고를 수 있어요.</p></div>
+        <div class="info-card"><h3>참고용 정보예요</h3><p>사주 풀이는 참고용 정보이며, 중요한 결정을 대신하지 않아요. 전체 정확성은 독립 검증 전이에요.</p></div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p>상호 {{ biz.name }} · 대표자 {{ biz.representative or biz.pending }} · 사업자등록번호 {{ biz.reg_no or biz.pending }} · 통신판매업 신고번호 {{ biz.mail_order_no or biz.pending }}</p>
+      <p>주소 {{ biz.address or biz.pending }} · 전화 {{ biz.phone or biz.pending }} · 이메일 {{ biz.email or biz.pending }}</p>
+      <p>본 서비스의 결과는 명리학 참고용이며 미래를 확정적으로 단정하지 않습니다.</p>
+      <p class="foot-links"><a href="/terms">이용약관</a> · <a href="/privacy">개인정보처리방침</a> · <a href="/refund">환불 안내</a></p>
+    </footer>
+  </div>
   <script>window.PAY_CONFIG = {{ pay|tojson }};</script>
   {% if pay.enabled %}<script src="https://js.tosspayments.com/v2/standard"></script>{% endif %}
   <script src="/static/app.js"></script>

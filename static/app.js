@@ -44,7 +44,7 @@ var lastInsight = null;
 var selectedProduct = "free";
 
 // 공유 카드에 들어가는 공개 정보(개인정보 아님).
-var SERVICE_NAME = "사주 상담";
+var SERVICE_NAME = "행운 사주풀이";
 // 상품 비교에서 처음 보여줄 대표 3개(무료/핵심/전문가). 나머지는 '더 보기'로 펼침.
 var REPRESENTATIVE_PRODUCTS = { free: true, basic_9900: true, expert_99000: true };
 
@@ -168,24 +168,36 @@ function basePayload() {
   return p;
 }
 
+function pad2(n) { return String(n).padStart(2, "0"); }
+
 function pillarCell(p) {
-  if (!p) return "<td><span class=\"gz\">-</span></td>";
-  return "<td><span class=\"gz\">" + esc(p.ganzhi) + "</span><span class=\"ko\">" +
-    esc((p.gan_ko || "") + (p.zhi_ko || "")) + "</span></td>";
+  var td = document.createElement("td");
+  if (!p) { td.appendChild(el("span", "gz", "-")); return td; }
+  td.appendChild(el("span", "gz", p.ganzhi));
+  td.appendChild(el("span", "ko", (p.gan_ko || "") + (p.zhi_ko || "")));
+  return td;
 }
 
-// 명식(한자) 테이블. pillar 값은 서버 산출(고정 문자셋)이며 esc 로 이스케이프한다.
+// 명식(한자) 표. 서버 응답 값은 모두 textContent 로만 삽입한다(innerHTML 미사용).
 function renderMyeongsikInto(box, data) {
+  box.textContent = "";
   var p = data.pillars;
-  var html = "<table class=\"pillars\"><tr><th>연주</th><th>월주</th><th>일주</th><th>시주</th></tr><tr>" +
-    pillarCell(p.year) + pillarCell(p.month) + pillarCell(p.day) + pillarCell(p.time) + "</tr></table>";
-  html += "<div class=\"meta\">양력 " + esc(data.solar.year) + "-" +
-    String(data.solar.month).padStart(2, "0") + "-" + String(data.solar.day).padStart(2, "0");
-  if (data.solar.time) html += " " + esc(data.solar.time);
-  html += "<br>" + esc(data.lunar.text) + "</div>";
+  var table = el("table", "pillars");
+  var head = document.createElement("tr");
+  ["연주", "월주", "일주", "시주"].forEach(function (t) { head.appendChild(el("th", null, t)); });
+  var body = document.createElement("tr");
+  [p.year, p.month, p.day, p.time].forEach(function (x) { body.appendChild(pillarCell(x)); });
+  table.appendChild(head);
+  table.appendChild(body);
+  box.appendChild(table);
+  var sd = data.solar || {};
+  var solarLine = "양력 " + sd.year + "-" + pad2(sd.month) + "-" + pad2(sd.day) + (sd.time ? " " + sd.time : "");
+  box.appendChild(el("div", "meta", solarLine));
+  box.appendChild(el("div", "meta", (data.lunar && data.lunar.text) || ""));
   var tc = data.time_correction || {};
-  html += "<div class=\"meta\">시간·지역 보정: " + (tc.applied ? "적용됨" : "미적용") + "</div>";
-  box.innerHTML = html;
+  box.appendChild(el("div", "meta", "시간·지역 보정: " + (tc.applied ? "적용됨" : "미적용")));
+  // 서버가 내려주는 정확도 안내를 그대로 보여 준다(전체 정확성 검증 완료로 표시하지 않는다).
+  if (data.accuracy_note) box.appendChild(el("p", "fr-warn", data.accuracy_note));
 }
 
 // ---- 무료 사주 요약 화면 ----
@@ -254,14 +266,13 @@ function renderFreeResult(saju, ins) {
   var ms = el("div", "myeongsik");
   renderMyeongsikInto(ms, saju);
   box.appendChild(ms);
+  if (ins.notes && ins.notes.length) {
+    ins.notes.forEach(function (nt) { box.appendChild(el("p", "fr-warn", nt)); });
+  }
 
   box.appendChild(el("h4", "fr-h", "오행 분포"));
   box.appendChild(renderElements(ins.elements));
   box.appendChild(el("p", "fr-note", ins.element_note));
-
-  if (ins.notes && ins.notes.length) {
-    ins.notes.forEach(function (nt) { box.appendChild(el("p", "fr-warn", nt)); });
-  }
 
   box.appendChild(buildShareArea(ins));
   box.appendChild(el("p", "fr-disclaimer", ins.disclaimer));
@@ -292,7 +303,7 @@ function drawShareCard(ins) {
   c.width = 720; c.height = 1280;
   var g = c.getContext("2d");
   var grad = g.createLinearGradient(0, 0, 0, c.height);
-  grad.addColorStop(0, "#5b6ef5"); grad.addColorStop(1, "#8b5bf5");
+  grad.addColorStop(0, "#1B2342"); grad.addColorStop(1, "#0E1220");
   g.fillStyle = grad; g.fillRect(0, 0, c.width, c.height);
   g.textAlign = "center";
 
@@ -484,7 +495,10 @@ function renderProducts() {
 
 // ---- 8단계: 고객용 신청 내용 확인 ----
 function row(label, value) {
-  return "<div class=\"srow\"><span class=\"sk\">" + esc(label) + "</span><span class=\"sv\">" + esc(value) + "</span></div>";
+  var r = el("div", "srow");
+  r.appendChild(el("span", "sk", label));
+  r.appendChild(el("span", "sv", value));
+  return r;
 }
 function renderConfirm() {
   var box = document.getElementById("confirm");
@@ -496,26 +510,27 @@ function renderConfirm() {
   var region = city.lon === null ? "모름(미보정)" : city.name;
   var topics = topicsSelected();
 
-  var html = "";
-  html += row("별칭", val("alias") || "(미입력)");
-  html += row("상담 유형", checked("consultation_type"));
-  html += row("출생 정보", birth);
-  html += row("출생시간 상태", timeStatusLabel());
-  html += row("출생 지역", region);
-  html += row("관심 주제", topics.length ? topics.join(", ") : "(선택 안 함)");
-  html += row("선택 상품", pr.name + " · " + pr.price);
-  html += row("제공 방식", pr.method);
-  html += row("예상 발송 기간", pr.eta);
+  box.textContent = "";
+  box.appendChild(row("별칭", val("alias") || "(미입력)"));
+  box.appendChild(row("상담 유형", checked("consultation_type")));
+  box.appendChild(row("출생 정보", birth));
+  box.appendChild(row("출생시간 상태", timeStatusLabel()));
+  box.appendChild(row("출생 지역", region));
+  box.appendChild(row("관심 주제", topics.length ? topics.join(", ") : "(선택 안 함)"));
+  box.appendChild(row("선택 상품", pr.name + " · " + pr.price));
+  box.appendChild(row("제공 방식", pr.method));
+  box.appendChild(row("예상 발송 기간", pr.eta));
   if (isPaid(selectedProduct)) {
-    html += row("수령 이메일", maskEmail(emailValue()));
+    box.appendChild(row("수령 이메일", maskEmail(emailValue())));
   }
 
   if (lastSaju && lastSaju.pillars) {
     var p = lastSaju.pillars;
     var four = [p.year, p.month, p.day, p.time].map(function (x) { return x ? x.ganzhi : "미상"; }).join(" ");
-    html += "<div class=\"srow\"><span class=\"sk\">무료 명식</span><span class=\"sv gz-line\">" + esc(four) + "</span></div>";
+    var gzRow = row("무료 명식", four);
+    gzRow.lastChild.className = "sv gz-line";
+    box.appendChild(gzRow);
   }
-  box.innerHTML = html;
 
   // 완료 영역
   var area = document.getElementById("complete-area");
@@ -651,6 +666,8 @@ function onEnter(n) {
   }
 }
 
+var started = false;  // 사용자가 단계를 직접 넘긴 뒤부터 포커스를 옮긴다(첫 로드 제외).
+
 function show(n) {
   current = Math.max(1, Math.min(TOTAL_STEPS, n));
   steps.forEach(function (s) { s.hidden = parseInt(s.getAttribute("data-step"), 10) !== current; });
@@ -659,13 +676,29 @@ function show(n) {
   prevBtn.disabled = current === 1;
   nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
   onEnter(current);
+  if (started) {
+    var heading = steps[current - 1].querySelector("h2");
+    if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus({ preventScroll: true }); }
+    var anchor = document.getElementById("start");
+    if (anchor && anchor.scrollIntoView) anchor.scrollIntoView({ block: "start" });
+  }
 }
 
 nextBtn.addEventListener("click", function () {
   if (!validateStep(current)) return;
-  if (current < TOTAL_STEPS) show(current + 1);
+  if (current < TOTAL_STEPS) { started = true; show(current + 1); }
 });
-prevBtn.addEventListener("click", function () { if (current > 1) show(current - 1); });
+prevBtn.addEventListener("click", function () { if (current > 1) { started = true; show(current - 1); } });
+
+// 큰 글씨: 화면에서만 바꾼다(브라우저 저장소 미사용, 새로고침하면 기본 크기).
+var largeToggle = document.getElementById("large-toggle");
+if (largeToggle) {
+  largeToggle.addEventListener("click", function () {
+    var on = !document.documentElement.classList.contains("large");
+    document.documentElement.classList.toggle("large", on);
+    largeToggle.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+}
 
 syncCalendar();
 syncTimeStatus();
