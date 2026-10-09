@@ -47,6 +47,9 @@ var selectedProduct = "free";
 
 // 공유 카드에 들어가는 공개 정보(개인정보 아님).
 var SERVICE_NAME = "행운 사주풀이";
+// 유료 보고서 전달 안내(상품 카드·주문 확인에서 동일 문구 사용).
+// 즉시 자동 발송이나 특정 자격 보유자의 검토를 주장하지 않는다.
+var DELIVERY_NOTE = "명식 확인·해석·검토 후 이메일로 보내 드려 시간이 걸립니다(즉시 자동 발송 아님).";
 // 상품 비교에서 처음 보여줄 대표 3개(무료/핵심/전문가). 나머지는 '더 보기'로 펼침.
 var REPRESENTATIVE_PRODUCTS = { free: true, basic_9900: true, expert_99000: true };
 
@@ -464,6 +467,9 @@ function renderProducts() {
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {
+      html += "<div class=\"meta\">" + esc(DELIVERY_NOTE) + "</div>";
+    }
+    if (pr.kind !== "free") {
       if (isHeldLive(pr.id)) {
         html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
       } else {
@@ -537,6 +543,9 @@ function renderConfirm() {
   box.appendChild(row("선택 상품", pr.name + " · " + pr.price));
   box.appendChild(row("제공 방식", pr.method));
   box.appendChild(row("예상 발송 기간", etaText(pr)));
+  if (isPaid(selectedProduct)) {
+    box.appendChild(el("p", "fr-note", DELIVERY_NOTE));
+  }
   if (isPaid(selectedProduct)) {
     box.appendChild(row("수령 이메일", maskEmail(emailValue())));
   }

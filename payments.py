@@ -156,7 +156,7 @@ def product_delivery_eta(product_code):
         days = int(raw)
     except (TypeError, ValueError):
         return None
-    return "%d영업일" % days if days > 0 else None
+    return "%d영업일 이내" % days if days > 0 else None
 
 
 def confirmed_delivery_etas():

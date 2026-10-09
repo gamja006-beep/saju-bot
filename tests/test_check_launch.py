@@ -370,10 +370,30 @@ class HeldProductBrowserGateTest(_EnvCase):
         # 확정 기한은 한 곳(PRODUCT_ETA_DAYS_*)에서 오고, 서버·클라이언트가 같은 값을 쓴다.
         self._set_live_keys()
         os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
-        self.assertEqual(payments.product_delivery_eta("BASIC"), "3영업일")
+        self.assertEqual(payments.product_delivery_eta("BASIC"), "3영업일 이내")
         cfg = payments.client_config()
-        self.assertEqual(cfg["deliveryEtas"].get("BASIC"), "3영업일")
+        self.assertEqual(cfg["deliveryEtas"].get("BASIC"), "3영업일 이내")
         self.assertNotIn("BASIC", cfg["heldProducts"])  # 확정되면 신청 불가 해제
+
+    def test_confirmed_basic3_deep5_etas(self):
+        # 운영자 확정값(BASIC 3·DEEP 5영업일 이내)을 단일 출처로 동일하게 표시한다.
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        os.environ["PRODUCT_ETA_DAYS_DEEP"] = "5"
+        self.assertEqual(payments.product_delivery_eta("BASIC"), "3영업일 이내")
+        self.assertEqual(payments.product_delivery_eta("DEEP"), "5영업일 이내")
+        self.assertIsNone(payments.product_live_blocked("BASIC"))
+        self.assertIsNone(payments.product_live_blocked("DEEP"))
+
+    def test_delivery_note_present_and_no_forbidden_claims(self):
+        with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        note = "명식 확인·해석·검토 후 이메일로 보내 드려 시간이 걸립니다(즉시 자동 발송 아님)."
+        self.assertIn("DELIVERY_NOTE", js)
+        self.assertIn(note, js)                         # 소요 시간 설명(단일 문구)
+        self.assertNotIn("전문가", note)                # 안내 문구에 전문가 표현 없음
+        self.assertNotIn("즉시 자동 발송됩니다", js)     # 즉시 자동 발송이라고 단정하지 않음
+        self.assertIn("esc(DELIVERY_NOTE)", js)         # 상품 카드에 표시
+        self.assertIn("fr-note\", DELIVERY_NOTE", js)   # 결제 직전 확인 화면에 표시
 
     def test_app_js_renders_held_label_and_single_eta_source(self):
         with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
