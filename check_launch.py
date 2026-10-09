@@ -27,8 +27,6 @@ PENDING = "미완료"
 
 # 상품 전달기한에서 '아직 확정 안 됨'을 뜻하는 표식(자리표시 또는 '제안').
 _ETA_UNRESOLVED = ("주문 시 안내", "제안")
-# 법적 고지에서 '미확정'을 뜻하는 표식(legal_pages.PENDING 과 동일).
-_LEGAL_PENDING = legal_pages.PENDING
 
 
 def _result(key, label, ok, detail=""):
@@ -70,25 +68,11 @@ def check_contact(info=None, env=None):
     return _result("contact", "고객 문의처", not missing, detail)
 
 
-def _iter_strings(doc):
-    for sec in doc.get("sections", []):
-        for key in ("p", "li"):
-            for s in sec.get(key, []):
-                yield s
-        if sec.get("h"):
-            yield sec["h"]
-
-
 def check_legal_pending():
-    """약관·개인정보·환불 문서에 남은 미확정('입력 대기') 문구를 센다."""
-    labels = {"terms": "이용약관", "privacy": "개인정보처리방침", "refund": "환불 안내"}
-    pending_docs = []
-    for key, label in labels.items():
-        doc = legal_pages.document(key)
-        n = sum(s.count(_LEGAL_PENDING) for s in _iter_strings(doc))
-        if n:
-            pending_docs.append("%s(%d곳)" % (label, n))
-    detail = "" if not pending_docs else "미확정 문구: " + ", ".join(pending_docs)
+    """약관·개인정보·환불 문서에 남은 미확정('입력 대기') 문구를 센다(legal_pages 와 동일 기준)."""
+    pending_docs = legal_pages.documents_with_pending()
+    detail = "" if not pending_docs else "미확정 문구: " + ", ".join(
+        "%s(%d곳)" % (label, n) for label, n in pending_docs)
     return _result("legal", "법적 고지 미확정 문구", not pending_docs, detail)
 
 

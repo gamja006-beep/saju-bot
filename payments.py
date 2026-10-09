@@ -19,6 +19,8 @@ import datetime
 import threading
 import urllib.request
 
+import legal_pages  # 법적 고지 미확정 여부 확인(순환 의존 없음: legal_pages 는 표준 라이브러리만 사용)
+
 # ---- 상품 서버 정본 (금액: 원, 정수) ----
 PRODUCTS = {
     "BASIC": {"name": "기본 해석", "amount": 9900},
@@ -126,12 +128,30 @@ def launch_blockers():
         reasons.append("사업장 주소 공개 표기 미확정(BIZ_ADDRESS)")
     if not _env("BIZ_PHONE"):
         reasons.append("고객 문의 전화 미정(BIZ_PHONE)")
+    if legal_pages.any_pending():
+        reasons.append("법적 고지(약관·개인정보·환불) 미확정 문구 존재")
     return reasons
 
 
+# 라이브 판매를 상품별로 더 확인해야 하는 상품(전문가 검토·복수 대상·연간). 확인 전까지 서버에서
+# 차단하며, 상품별 환경변수 PRODUCT_LIVE_READY_<CODE>=true 로만 개별 해제한다.
+LIVE_HOLD_PRODUCTS = ("EXPERT", "LIFE_DESIGN", "RELATION_BUSINESS", "ANNUAL_VIP")
+
+
+def product_live_blocked(product_code):
+    """상품별 라이브 판매 차단 사유(없으면 None).
+
+    전문가·복수 대상·연간 상품은 운영 준비 확인 전까지 차단한다. 빠른 출시 대상(기본·심층)과
+    알 수 없는 코드는 여기서 막지 않는다(후자는 create_order 가 검증). test 모드 호출자는
+    이 함수를 적용하지 않는다(합성 테스트로 모든 상품 흐름 유지)."""
+    if product_code in LIVE_HOLD_PRODUCTS and _env("PRODUCT_LIVE_READY_%s" % product_code).lower() != "true":
+        return "상품 '%s' 라이브 판매 준비 미확정" % product_code
+    return None
+
+
 def live_payments_ready():
-    """실(live) 결제를 열어도 되는지. 설정상 enabled 이고, live 모드라면 미확정 운영 항목이
-    없어야 True. test 모드는 이 가드의 영향을 받지 않는다(합성 테스트 흐름 유지)."""
+    """실(live) 결제를 열어도 되는지(공통 조건). 설정상 enabled 이고, live 모드라면 공통 미확정
+    운영 항목(주소·전화·법적 고지)이 없어야 True. test 모드는 이 가드의 영향을 받지 않는다."""
     st = config_status()
     if not st["enabled"]:
         return False
@@ -141,12 +161,16 @@ def live_payments_ready():
 
 
 def client_config():
-    """브라우저로 전달 가능한 설정만. 시크릿/암호화 키는 절대 포함하지 않는다."""
+    """브라우저로 전달 가능한 설정만. 시크릿/암호화 키는 절대 포함하지 않는다.
+
+    공통 출시 조건(주소·전화·법적 고지)이 미확정이면 live 에서 브라우저 결제도 비활성으로
+    내려 결제창/키를 내보내지 않는다. test 모드는 영향받지 않는다."""
     st = config_status()
+    ready = st["enabled"] and live_payments_ready()
     return {
-        "enabled": st["enabled"],
+        "enabled": ready,
         "mode": st["mode"],
-        "clientKey": _env("TOSS_CLIENT_KEY") if st["enabled"] else "",
+        "clientKey": _env("TOSS_CLIENT_KEY") if ready else "",
     }
 
 

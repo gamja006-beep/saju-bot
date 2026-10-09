@@ -190,3 +190,30 @@ def document(key):
     d = _DOCS[key]()
     d["notice"] = DRAFT_NOTICE
     return d
+
+
+def _doc_strings(doc):
+    """문서(sections)의 모든 표시 문자열을 순회한다(미확정 문구 탐지용)."""
+    for sec in doc.get("sections", []):
+        for s in sec.get("p", []):
+            yield s
+        for s in sec.get("li", []):
+            yield s
+        if sec.get("h"):
+            yield sec["h"]
+
+
+def documents_with_pending():
+    """약관·개인정보·환불 중 '입력 대기'(미확정) 문구가 남은 문서 목록. [(라벨, 건수), ...]."""
+    labels = {"terms": "이용약관", "privacy": "개인정보처리방침", "refund": "환불 안내"}
+    out = []
+    for key, label in labels.items():
+        n = sum(s.count(PENDING) for s in _doc_strings(document(key)))
+        if n:
+            out.append((label, n))
+    return out
+
+
+def any_pending():
+    """법적 고지에 미확정 문구가 하나라도 남아 있으면 True."""
+    return bool(documents_with_pending())

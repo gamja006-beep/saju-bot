@@ -292,11 +292,16 @@ def api_orders():
         # 결제 비활성: 주문 생성하지 않음(무료 명식과 분리).
         return jsonify({"status": "error", "code": "payments_disabled",
                         "message": "현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다."}), 503
-    # 라이브 결제 가드: 사업장 주소 공개 표기·고객 문의 전화가 확정되기 전에는
-    # 실(live) 결제 주문을 접수하지 않는다(test 모드는 영향 없음).
+    # 공통 라이브 결제 가드: 주소·전화·법적 고지가 확정되기 전에는 실(live) 주문을 접수하지
+    # 않는다(test 모드는 영향 없음).
     if not payments.live_payments_ready():
         return jsonify({"status": "error", "code": "launch_incomplete",
                         "message": "현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다."}), 503
+    # 상품별 라이브 가드: 전문가·복수 대상·연간 상품은 운영 준비 확인 전까지 해당 상품만 차단.
+    if payments.payment_mode() == "live":
+        if payments.product_live_blocked(data.get("product_code") or ""):
+            return jsonify({"status": "error", "code": "product_unavailable",
+                            "message": "선택하신 상품은 현재 판매 준비 중입니다."}), 503
     try:
         result = payments.create_order(
             ORDER_STORE,

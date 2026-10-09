@@ -185,23 +185,33 @@ class LivePaymentGuardTest(_EnvCase):
         os.environ["TOSS_SECRET_KEY"] = "live_sk_x"
         os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
 
-    def test_launch_blockers_lists_address_and_phone_when_unset(self):
+    def _set_biz(self):
+        os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
+        os.environ["BIZ_PHONE"] = "031-000-0000"
+
+    def test_launch_blockers_lists_all_common_conditions_when_unset(self):
         joined = " ".join(payments.launch_blockers())
         self.assertIn("BIZ_ADDRESS", joined)
         self.assertIn("BIZ_PHONE", joined)
+        self.assertIn("법적 고지", joined)  # 약관·개인정보·환불 미확정도 공통 차단
 
-    def test_launch_blockers_empty_when_both_set(self):
-        os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
-        os.environ["BIZ_PHONE"] = "031-000-0000"
-        self.assertEqual(payments.launch_blockers(), [])
+    def test_launch_blockers_empty_only_when_biz_and_legal_resolved(self):
+        self._set_biz()
+        self.assertIn("법적 고지", " ".join(payments.launch_blockers()))  # 법적 고지 미확정이면 여전히 차단
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            self.assertEqual(payments.launch_blockers(), [])
 
-    def test_live_payments_blocked_until_address_and_phone_set(self):
+    def test_live_blocked_by_each_condition(self):
         self._set_live_keys()
-        self.assertTrue(payments.payments_enabled())      # 설정상으로는 enabled
-        self.assertFalse(payments.live_payments_ready())  # 주소·전화 미확정 → live 미준비
-        os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
-        os.environ["BIZ_PHONE"] = "031-000-0000"
-        self.assertTrue(payments.live_payments_ready())
+        self.assertTrue(payments.payments_enabled())
+        # (1) 주소·전화·법적 모두 미확정
+        self.assertFalse(payments.live_payments_ready())
+        # (2) 주소·전화만 설정, 법적 고지 미확정 → 여전히 차단
+        self._set_biz()
+        self.assertFalse(payments.live_payments_ready())
+        # (3) 법적 고지까지 해소 → 공통 조건 충족
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            self.assertTrue(payments.live_payments_ready())
 
     def test_test_mode_not_blocked_by_guard(self):
         os.environ["PAYMENTS_ENABLED"] = "true"
@@ -209,15 +219,78 @@ class LivePaymentGuardTest(_EnvCase):
         os.environ["TOSS_CLIENT_KEY"] = "test_ck_x"
         os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
         os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
-        self.assertTrue(payments.live_payments_ready())  # test 모드는 가드 영향 없음
+        self.assertTrue(payments.live_payments_ready())  # test 모드는 공통 가드 영향 없음
 
-    def test_api_orders_blocks_live_without_address_and_phone(self):
+    def test_product_live_blocked_only_for_hold_products(self):
+        for code in ("EXPERT", "LIFE_DESIGN", "RELATION_BUSINESS", "ANNUAL_VIP"):
+            self.assertIsNotNone(payments.product_live_blocked(code), code)
+        for code in ("BASIC", "DEEP", ""):
+            self.assertIsNone(payments.product_live_blocked(code), code)
+
+    def test_product_live_unblocked_by_env_flag(self):
+        self.addCleanup(lambda: os.environ.pop("PRODUCT_LIVE_READY_EXPERT", None))
+        self.assertIsNotNone(payments.product_live_blocked("EXPERT"))
+        os.environ["PRODUCT_LIVE_READY_EXPERT"] = "true"
+        self.assertIsNone(payments.product_live_blocked("EXPERT"))
+
+    def test_api_orders_common_block_live_without_biz(self):
         import saju_bot
-        self._set_live_keys()  # 주소·전화 미설정
+        self._set_live_keys()  # 주소·전화 미설정 + 법적 고지 미확정
         c = saju_bot.app.test_client()
         r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
         self.assertEqual(r.status_code, 503)
         self.assertEqual(r.get_json().get("code"), "launch_incomplete")
+
+    def test_api_orders_product_block_live_expert_even_when_common_ok(self):
+        import saju_bot
+        self._set_live_keys()
+        self._set_biz()
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        c = saju_bot.app.test_client()
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            r = c.post("/api/orders", json={"product_code": "EXPERT", "email": "x@example.test"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.get_json().get("code"), "product_unavailable")
+
+    def test_api_orders_quick_launch_basic_allowed_when_ready_live(self):
+        import saju_bot
+        self._set_live_keys()
+        self._set_biz()
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        c = saju_bot.app.test_client()
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json().get("status"), "ok")
+
+    def test_api_orders_test_mode_allows_hold_product(self):
+        # test 모드는 상품별 가드를 적용하지 않는다(합성 테스트 흐름 유지).
+        import saju_bot
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "test"
+        os.environ["TOSS_CLIENT_KEY"] = "test_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        c = saju_bot.app.test_client()
+        r = c.post("/api/orders", json={"product_code": "EXPERT", "email": "x@example.test"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_client_config_browser_disabled_live_until_ready(self):
+        self._set_live_keys()  # 공통 조건 미확정
+        self.assertFalse(payments.client_config()["enabled"])
+        self.assertEqual(payments.client_config()["clientKey"], "")
+        self._set_biz()
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            self.assertTrue(payments.client_config()["enabled"])
+
+    def test_client_config_test_mode_enabled(self):
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "test"
+        os.environ["TOSS_CLIENT_KEY"] = "test_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+        self.assertTrue(payments.client_config()["enabled"])
 
 
 if __name__ == "__main__":
