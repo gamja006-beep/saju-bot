@@ -10,6 +10,7 @@ import base64
 import datetime
 import threading
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -159,13 +160,26 @@ class DrainTest(unittest.TestCase):
         _clear_env()
         _enable_payments()
         self.store = payments.InMemoryOrderStore()
-        o = payments.create_order(self.store, "EXPERT", "customer@example.com",
-                                  {"birth_date": "1990-05-15", "gender": "남"})
-        self.oid, amt = o["orderId"], o["amount"]
-        payments.approve_payment(self.store, "pk_1", self.oid, amt, confirm_fn=_toss_ok)
+        # 주문 생성·결제 승인을 테스트 고정 시각(_now())으로 실행한다. 이렇게 하지 않으면
+        # 알림 next_retry_at 이 실제 현재 시각으로 기록되어, 테스트의 과거 drain 시각(_now())이
+        # 작업을 선점하지 못한다. patch.object 컨텍스트는 이 구간에서만 고정하고 자동 복원한다.
+        with mock.patch.object(payments, "_now", return_value=_now()):
+            o = payments.create_order(self.store, "EXPERT", "customer@example.com",
+                                      {"birth_date": "1990-05-15", "gender": "남"})
+            self.oid, amt = o["orderId"], o["amount"]
+            payments.approve_payment(self.store, "pk_1", self.oid, amt, confirm_fn=_toss_ok)
 
     def tearDown(self):
         _clear_env()
+
+    def test_next_retry_at_not_future_of_drain_time(self):
+        # 회귀 가드: setUp 이 주문/승인을 고정 시각으로 기록하므로, 각 알림의 next_retry_at 은
+        # 생성 시각(_now())과 같고, 테스트 drain 실행 시각(_now())보다 미래가 아니어야
+        # (= 선점 가능) 한다. 이 관계가 깨지면 DrainTest 전체가 선점 실패로 무너진다.
+        for ch in ("email", "telegram"):
+            row = self._status(ch)
+            self.assertEqual(row["next_retry_at"], _now())
+            self.assertLessEqual(row["next_retry_at"], _now())
 
     def _enable_notify(self):
         os.environ["OPERATOR_NOTIFICATIONS_ENABLED"] = "true"
