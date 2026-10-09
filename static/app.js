@@ -468,8 +468,6 @@ function renderProducts() {
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {
       html += "<div class=\"meta\">" + esc(DELIVERY_NOTE) + "</div>";
-    }
-    if (pr.kind !== "free") {
       if (isHeldLive(pr.id)) {
         html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
       } else {
