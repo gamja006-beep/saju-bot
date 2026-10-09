@@ -25,7 +25,10 @@ _FERNET_KEY = Fernet.generate_key().decode("ascii")
 _ALL_ENV = ["BIZ_NAME", "BIZ_REPRESENTATIVE", "BIZ_REG_NO", "BIZ_MAIL_ORDER_NO",
             "BIZ_ADDRESS", "BIZ_PHONE", "BIZ_EMAIL",
             "PAYMENTS_ENABLED", "PAYMENT_MODE", "TOSS_CLIENT_KEY", "TOSS_SECRET_KEY",
-            "ORDER_ENCRYPTION_KEY"]
+            "ORDER_ENCRYPTION_KEY",
+            "PRODUCT_ETA_DAYS_BASIC", "PRODUCT_ETA_DAYS_DEEP", "PRODUCT_ETA_READY_BASIC",
+            "PRODUCT_LIVE_READY_EXPERT", "PRODUCT_LIVE_READY_LIFE_DESIGN",
+            "PRODUCT_LIVE_READY_RELATION_BUSINESS", "PRODUCT_LIVE_READY_ANNUAL_VIP"]
 
 
 
@@ -60,22 +63,30 @@ class _EnvCase(unittest.TestCase):
                 os.environ[k] = v
 
 
-class StatusHelpersTest(unittest.TestCase):
-    def test_launch_products_eta_pending_without_flags(self):
-        r = check_launch.check_launch_products({})  # PRODUCT_ETA_READY_* 미설정
+class StatusHelpersTest(_EnvCase):
+    def test_launch_products_eta_pending_without_days(self):
+        r = check_launch.check_launch_products()  # PRODUCT_ETA_DAYS_* 미설정
         self.assertEqual(r["status"], check_launch.PENDING)
-        self.assertIn("PRODUCT_ETA_READY_BASIC", r["detail"])
-        self.assertIn("PRODUCT_ETA_READY_DEEP", r["detail"])
+        self.assertIn("PRODUCT_ETA_DAYS_BASIC", r["detail"])
+        self.assertIn("PRODUCT_ETA_DAYS_DEEP", r["detail"])
 
-    def test_launch_products_eta_pass_when_both_flags_set(self):
-        env = {"PRODUCT_ETA_READY_BASIC": "true", "PRODUCT_ETA_READY_DEEP": "true"}
-        self.assertEqual(check_launch.check_launch_products(env)["status"], check_launch.PASS)
+    def test_launch_products_eta_pass_when_both_days_set(self):
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        os.environ["PRODUCT_ETA_DAYS_DEEP"] = "5"
+        self.assertEqual(check_launch.check_launch_products()["status"], check_launch.PASS)
 
     def test_launch_products_eta_pending_if_one_missing(self):
-        env = {"PRODUCT_ETA_READY_BASIC": "true"}  # DEEP 미확정
-        r = check_launch.check_launch_products(env)
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"  # DEEP 미확정
+        r = check_launch.check_launch_products()
         self.assertEqual(r["status"], check_launch.PENDING)
-        self.assertIn("PRODUCT_ETA_READY_DEEP", r["detail"])
+        self.assertIn("PRODUCT_ETA_DAYS_DEEP", r["detail"])
+
+    def test_eta_ready_boolean_flag_alone_does_not_confirm(self):
+        # 보고된 허점: 불리언 플래그만으로는 확정되지 않는다(실제 일수 값이 있어야 함).
+        os.environ["PRODUCT_ETA_READY_BASIC"] = "true"  # 레거시 플래그만
+        r = check_launch.check_launch_products()
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("PRODUCT_ETA_DAYS_BASIC", r["detail"])
 
     def test_held_products_reported_as_hold_not_blocker(self):
         r = check_launch.check_held_products()
@@ -140,10 +151,8 @@ class AllPassTest(_EnvCase):
     def test_fully_configured_synthetic_has_no_blockers(self):
         _fill_business(os.environ)
         _enable_payments(os.environ)
-        os.environ["PRODUCT_ETA_READY_BASIC"] = "true"
-        os.environ["PRODUCT_ETA_READY_DEEP"] = "true"
-        self.addCleanup(lambda: [os.environ.pop(k, None)
-                                 for k in ("PRODUCT_ETA_READY_BASIC", "PRODUCT_ETA_READY_DEEP")])
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        os.environ["PRODUCT_ETA_DAYS_DEEP"] = "5"
         clean_doc = {"sections": [{"h": "x", "p": ["확정된 문구"], "li": []}]}
         with mock.patch.object(legal_pages, "document", return_value=clean_doc):
             results = check_launch.run_checks()
@@ -244,11 +253,16 @@ class LivePaymentGuardTest(_EnvCase):
         os.environ["PRODUCT_LIVE_READY_EXPERT"] = "true"
         self.assertIsNone(payments.product_live_blocked("EXPERT"))
 
-    def test_launch_product_unblocked_by_eta_ready_flag(self):
-        self.addCleanup(lambda: os.environ.pop("PRODUCT_ETA_READY_BASIC", None))
+    def test_launch_product_unblocked_by_eta_days(self):
         self.assertIsNotNone(payments.product_live_blocked("BASIC"))  # 전달기한 미확정
-        os.environ["PRODUCT_ETA_READY_BASIC"] = "true"
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
         self.assertIsNone(payments.product_live_blocked("BASIC"))
+
+    def test_eta_ready_flag_alone_does_not_open_live(self):
+        # 보고된 허점 재현·차단: 불리언 플래그만으로는 live 가 열리지 않는다.
+        os.environ["PRODUCT_ETA_READY_BASIC"] = "true"
+        self.assertIsNotNone(payments.product_live_blocked("BASIC"))
+        self.assertIsNone(payments.product_delivery_eta("BASIC"))  # 확정 일수 없음
 
     def test_api_orders_common_block_live_without_biz(self):
         import saju_bot
@@ -284,8 +298,7 @@ class LivePaymentGuardTest(_EnvCase):
         import saju_bot
         self._set_live_keys()
         self._set_biz()
-        self.addCleanup(lambda: os.environ.pop("PRODUCT_ETA_READY_BASIC", None))
-        os.environ["PRODUCT_ETA_READY_BASIC"] = "true"
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
         saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
         c = saju_bot.app.test_client()
         with mock.patch.object(legal_pages, "any_pending", return_value=False):
@@ -338,11 +351,10 @@ class HeldProductBrowserGateTest(_EnvCase):
         self.assertTrue(set(self._HOLD).issubset(held))        # 보류 4종 포함
         self.assertIn("BASIC", held)                           # 전달기한 미확정 출시상품도 포함
         self.assertIn("DEEP", held)
-        flags = (["PRODUCT_LIVE_READY_%s" % c for c in self._HOLD] +
-                 ["PRODUCT_ETA_READY_BASIC", "PRODUCT_ETA_READY_DEEP"])
-        self.addCleanup(lambda: [os.environ.pop(f, None) for f in flags])
-        for f in flags:
-            os.environ[f] = "true"
+        for c in self._HOLD:
+            os.environ["PRODUCT_LIVE_READY_%s" % c] = "true"
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        os.environ["PRODUCT_ETA_DAYS_DEEP"] = "5"
         self.assertEqual(payments.held_live_products(), [])    # 전부 해제되면 빈 목록
 
     def test_client_config_exposes_held_products_live_only(self):
@@ -354,12 +366,25 @@ class HeldProductBrowserGateTest(_EnvCase):
         os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
         self.assertEqual(payments.client_config()["heldProducts"], [])
 
-    def test_app_js_renders_held_label_and_guards_entry(self):
+    def test_delivery_eta_single_source_and_client_match(self):
+        # 확정 기한은 한 곳(PRODUCT_ETA_DAYS_*)에서 오고, 서버·클라이언트가 같은 값을 쓴다.
+        self._set_live_keys()
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        self.assertEqual(payments.product_delivery_eta("BASIC"), "3영업일")
+        cfg = payments.client_config()
+        self.assertEqual(cfg["deliveryEtas"].get("BASIC"), "3영업일")
+        self.assertNotIn("BASIC", cfg["heldProducts"])  # 확정되면 신청 불가 해제
+
+    def test_app_js_renders_held_label_and_single_eta_source(self):
         with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
             js = f.read()
         self.assertIn("현재 신청 불가", js)       # 고객 화면 표시
         self.assertIn("isHeldLive", js)            # 진입 차단 헬퍼
         self.assertIn("heldProducts", js)          # 서버 전달 목록 사용
+        self.assertIn("function etaText", js)      # 전달기한 단일 출처 헬퍼
+        self.assertIn("deliveryEtas", js)          # 서버 확정 기한 사용
+        self.assertIn("esc(etaText(pr))", js)                 # 상품 카드가 단일 출처 사용
+        self.assertIn("\"예상 발송 기간\", etaText(pr)", js)   # 주문 안내도 같은 출처 사용
 
 
 if __name__ == "__main__":

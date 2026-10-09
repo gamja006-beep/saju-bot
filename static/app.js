@@ -87,6 +87,12 @@ function isHeldLive(id) {
   var held = (window.PAY_CONFIG && window.PAY_CONFIG.heldProducts) || [];
   return held.indexOf(PRODUCT_CODE[id]) >= 0;
 }
+// 전달기한 표시의 단일 출처: 서버가 확정한 기한(deliveryEtas)이 있으면 그 값을, 없으면 상품의
+// 안내용 문구(제안)를 쓴다. 상품 카드와 주문 안내가 이 함수를 함께 사용해 불일치를 막는다.
+function etaText(pr) {
+  var map = (window.PAY_CONFIG && window.PAY_CONFIG.deliveryEtas) || {};
+  return map[PRODUCT_CODE[pr.id]] || pr.eta;
+}
 
 // ---- 이메일 ----
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -456,7 +462,7 @@ function renderProducts() {
     var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
       esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
-    html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(pr.eta) + "</div>";
+    html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {
       if (isHeldLive(pr.id)) {
         html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
@@ -530,7 +536,7 @@ function renderConfirm() {
   box.appendChild(row("관심 주제", topics.length ? topics.join(", ") : "(선택 안 함)"));
   box.appendChild(row("선택 상품", pr.name + " · " + pr.price));
   box.appendChild(row("제공 방식", pr.method));
-  box.appendChild(row("예상 발송 기간", pr.eta));
+  box.appendChild(row("예상 발송 기간", etaText(pr)));
   if (isPaid(selectedProduct)) {
     box.appendChild(row("수령 이메일", maskEmail(emailValue())));
   }

@@ -75,15 +75,13 @@ def check_legal_pending():
     return _result("legal", "법적 고지 미확정 문구", not pending_docs, detail)
 
 
-def check_launch_products(env=None):
+def check_launch_products():
     """첫 출시 대상(BASIC·DEEP)의 전달기한 확정 여부만 본다(보류 상품과 분리).
-    운영자가 PRODUCT_ETA_READY_<CODE>=true 로 전달기한을 확정하기 전까지는 미완료로 둔다."""
-    env = os.environ if env is None else env
-    missing = []
-    for code in payments.LAUNCH_PRODUCTS:
-        if (env.get("PRODUCT_ETA_READY_%s" % code) or "").strip().lower() != "true":
-            missing.append("PRODUCT_ETA_READY_%s" % code)
-    detail = "" if not missing else "전달기한 미확정(운영자 확정 필요): " + ", ".join(missing)
+    운영자가 PRODUCT_ETA_DAYS_<CODE>(양의 정수 영업일)로 기한을 설정하기 전까지는 미완료로 둔다.
+    '제안'/'주문 시 안내' 문구 상태에서는 확정 일수가 없어 자동으로 미완료가 된다."""
+    missing = ["PRODUCT_ETA_DAYS_%s" % code for code in payments.LAUNCH_PRODUCTS
+               if payments.product_delivery_eta(code) is None]
+    detail = "" if not missing else "전달기한 미확정(운영자 일수 설정 필요): " + ", ".join(missing)
     return _result("launch_products", "출시 상품(BASIC·DEEP) 전달기한", not missing, detail)
 
 
@@ -119,7 +117,7 @@ def run_checks(info=None, env=None):
         check_business_info(info, env),
         check_contact(info, env),
         check_legal_pending(),
-        check_launch_products(env),
+        check_launch_products(),
         check_payment_config(),
         check_held_products(),  # 정보성(보류) — 출시 차단 건수에 포함하지 않음
     ]

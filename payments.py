@@ -145,15 +145,39 @@ def _flag_true(name):
     return _env(name).lower() == "true"
 
 
+def product_delivery_eta(product_code):
+    """운영자가 확정한 전달기한 '표시 문구'(전 화면 단일 출처). 미확정이면 None.
+
+    값은 환경변수 PRODUCT_ETA_DAYS_<CODE>(양의 정수 영업일)에서만 온다. 코드는 기한을 임의로
+    확정하지 않는다(값이 없으면 None). 상품 카드와 주문 안내는 모두 이 문구를 사용해야 서로
+    다른 기한이 표시되지 않는다. 불리언 플래그만으로는 열리지 않는다(실제 일수 값이 있어야 함)."""
+    raw = _env("PRODUCT_ETA_DAYS_%s" % product_code)
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return "%d영업일" % days if days > 0 else None
+
+
+def confirmed_delivery_etas():
+    """확정된 전달기한 맵 {상품코드: 문구}. 출시 대상 중 운영자가 일수를 설정한 상품만."""
+    out = {}
+    for code in LAUNCH_PRODUCTS:
+        eta = product_delivery_eta(code)
+        if eta:
+            out[code] = eta
+    return out
+
+
 def product_live_blocked(product_code):
     """상품별 라이브 판매 차단 사유(없으면 None).
 
-    - 출시 대상(기본·심층): 전달기한이 PRODUCT_ETA_READY_<CODE> 로 확정되기 전까지 차단한다
-      (보류 상품의 전달기한·전문가 문구와 무관하게 이 두 상품만 개별 판단).
+    - 출시 대상(기본·심층): 전달기한이 '확정 일수'(PRODUCT_ETA_DAYS_<CODE>)로 설정되기 전까지
+      차단한다. 문구가 '제안'/'주문 시 안내'인 상태에서는 확정 일수가 없으므로 자동으로 차단된다.
     - 보류 상품(전문가·복수 대상·연간): PRODUCT_LIVE_READY_<CODE> 확인 전까지 차단한다.
     - 그 외/알 수 없는 코드: 여기서 막지 않는다(create_order 가 검증).
     test 모드 호출자는 이 함수를 적용하지 않는다(합성 테스트로 모든 상품 흐름 유지)."""
-    if product_code in LAUNCH_PRODUCTS and not _flag_true("PRODUCT_ETA_READY_%s" % product_code):
+    if product_code in LAUNCH_PRODUCTS and product_delivery_eta(product_code) is None:
         return "상품 '%s' 전달기한 미확정" % product_code
     if product_code in LIVE_HOLD_PRODUCTS and not _flag_true("PRODUCT_LIVE_READY_%s" % product_code):
         return "상품 '%s' 라이브 판매 준비 미확정" % product_code
@@ -191,6 +215,8 @@ def client_config():
         "mode": st["mode"],
         "clientKey": _env("TOSS_CLIENT_KEY") if ready else "",
         "heldProducts": held,
+        # 확정된 전달기한 단일 출처. 상품 카드·주문 안내가 이 값을 함께 사용한다(불일치 방지).
+        "deliveryEtas": confirmed_delivery_etas(),
     }
 
 
