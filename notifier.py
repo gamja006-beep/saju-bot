@@ -33,7 +33,8 @@ import payments
 # n8n Header Auth 와 맞출 인증 헤더 이름(값은 N8N_NOTIFICATION_HEADER_SECRET).
 # 서버 계약 고정: 헤더 이름은 반드시 X-AlphaLab-Notify-Token 이어야 n8n Header Auth 통과.
 NOTIFY_HEADER_NAME = "X-AlphaLab-Notify-Token"
-NOTIFY_HTTP_TIMEOUT = 10
+# 채널별 n8n 요청 상한 3초. 웹훅 즉시 전송 시 두 채널 순차 처리해도 6초(+Toss 조회 2초=8초).
+NOTIFY_HTTP_TIMEOUT = 3
 _CLAIM_LIMIT = 50
 
 

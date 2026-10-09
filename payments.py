@@ -35,8 +35,9 @@ TOSS_CONFIRM_URL = "https://api.tosspayments.com/v1/payments/confirm"
 # 결제 조회(orderId 기준) 공식 고정 URL prefix. 웹훅 본문을 신뢰하지 않고 재검증할 때 사용.
 TOSS_PAYMENT_BY_ORDER_URL = "https://api.tosspayments.com/v1/payments/orders/"
 HTTP_TIMEOUT_SEC = 10
-# 웹훅 핸들러는 10초 안에 응답해야 하므로 조회 timeout 을 더 짧게 둔다.
-TOSS_WEBHOOK_TIMEOUT_SEC = 8
+# 웹훅은 10초 안에 응답해야 한다. 외부통신 상한을 8초 이내로 묶기 위해
+# 조회 2초 + n8n 두 채널(각 3초) = 최악 8초. 조회는 최대 2초.
+TOSS_WEBHOOK_TIMEOUT_SEC = 2
 PRIVATE_DATA_RETENTION_DAYS = 90
 
 _SUCCESS_STATES = ("DONE", "APPROVED", "PAID")

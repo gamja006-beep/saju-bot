@@ -383,5 +383,59 @@ class AdminRetryTest(_Base):
         self.assertIn("/notifications/retry", body)
 
 
+# ---- 4. 외부통신 timeout 상한 ----
+class TimeoutBoundsTest(unittest.TestCase):
+    def test_toss_lookup_timeout_at_most_2s(self):
+        self.assertLessEqual(payments.TOSS_WEBHOOK_TIMEOUT_SEC, 2)
+
+    def test_n8n_channel_timeout_at_most_3s(self):
+        self.assertLessEqual(notifier.NOTIFY_HTTP_TIMEOUT, 3)
+
+    def test_webhook_total_external_budget_within_8s(self):
+        # 조회 1회 + n8n 두 채널 순차 = 최악 외부통신 상한.
+        budget = payments.TOSS_WEBHOOK_TIMEOUT_SEC + 2 * notifier.NOTIFY_HTTP_TIMEOUT
+        self.assertLessEqual(budget, 8)
+
+    def test_toss_lookup_passes_bounded_timeout(self):
+        # _toss_get_payment_by_order 가 urlopen 에 <=2초 timeout 을 전달하는지(네트워크 없이 확인).
+        import urllib.request
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_samplesecret"
+        seen = {}
+
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"orderId":"o","status":"DONE","totalAmount":1,"paymentKey":"k"}'
+
+        saved = urllib.request.urlopen
+        urllib.request.urlopen = lambda req, timeout=None, **kw: seen.update(timeout=timeout) or _Resp()
+        try:
+            payments._toss_get_payment_by_order("ord_x")
+        finally:
+            urllib.request.urlopen = saved
+            os.environ.pop("TOSS_SECRET_KEY", None)
+        self.assertLessEqual(seen["timeout"], 2)
+
+    def test_n8n_post_passes_bounded_timeout(self):
+        import urllib.request
+        seen = {}
+
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"status":"sent"}'
+            def getcode(self): return 200
+
+        saved = urllib.request.urlopen
+        urllib.request.urlopen = lambda req, timeout=None, **kw: seen.update(timeout=timeout) or _Resp()
+        try:
+            notifier._http_post("https://n8n.example.test/x",
+                                {"event_type": "order.paid", "event_id": "e", "order_id": "o",
+                                 "channel": "email"}, "secret")
+        finally:
+            urllib.request.urlopen = saved
+        self.assertLessEqual(seen["timeout"], 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
