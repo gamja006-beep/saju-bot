@@ -149,6 +149,11 @@ def product_live_blocked(product_code):
     return None
 
 
+def held_live_products():
+    """현재 live 판매가 막혀 있는 상품 코드 목록(브라우저 안내·결제 진입 차단용)."""
+    return [c for c in LIVE_HOLD_PRODUCTS if product_live_blocked(c)]
+
+
 def live_payments_ready():
     """실(live) 결제를 열어도 되는지(공통 조건). 설정상 enabled 이고, live 모드라면 공통 미확정
     운영 항목(주소·전화·법적 고지)이 없어야 True. test 모드는 이 가드의 영향을 받지 않는다."""
@@ -167,10 +172,13 @@ def client_config():
     내려 결제창/키를 내보내지 않는다. test 모드는 영향받지 않는다."""
     st = config_status()
     ready = st["enabled"] and live_payments_ready()
+    # live 에서 아직 준비되지 않은 상품은 브라우저에서도 '현재 신청 불가'로 표시·차단한다.
+    held = held_live_products() if st["mode"] == "live" else []
     return {
         "enabled": ready,
         "mode": st["mode"],
         "clientKey": _env("TOSS_CLIENT_KEY") if ready else "",
+        "heldProducts": held,
     }
 
 

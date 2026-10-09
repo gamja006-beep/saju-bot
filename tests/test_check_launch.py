@@ -293,5 +293,39 @@ class LivePaymentGuardTest(_EnvCase):
         self.assertTrue(payments.client_config()["enabled"])
 
 
+class HeldProductBrowserGateTest(_EnvCase):
+    _HOLD = ("EXPERT", "LIFE_DESIGN", "RELATION_BUSINESS", "ANNUAL_VIP")
+
+    def _set_live_keys(self):
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "live"
+        os.environ["TOSS_CLIENT_KEY"] = "live_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "live_sk_x"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+
+    def test_held_live_products_default_and_env_unblock(self):
+        self.assertEqual(set(payments.held_live_products()), set(self._HOLD))
+        self.addCleanup(lambda: [os.environ.pop("PRODUCT_LIVE_READY_%s" % c, None) for c in self._HOLD])
+        for c in self._HOLD:
+            os.environ["PRODUCT_LIVE_READY_%s" % c] = "true"
+        self.assertEqual(payments.held_live_products(), [])
+
+    def test_client_config_exposes_held_products_live_only(self):
+        self._set_live_keys()
+        self.assertIn("EXPERT", payments.client_config()["heldProducts"])
+        # test 모드에서는 상품 차단 목록을 노출하지 않는다(상품 가드 미적용).
+        os.environ["PAYMENT_MODE"] = "test"
+        os.environ["TOSS_CLIENT_KEY"] = "test_ck_x"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_x"
+        self.assertEqual(payments.client_config()["heldProducts"], [])
+
+    def test_app_js_renders_held_label_and_guards_entry(self):
+        with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        self.assertIn("현재 신청 불가", js)       # 고객 화면 표시
+        self.assertIn("isHeldLive", js)            # 진입 차단 헬퍼
+        self.assertIn("heldProducts", js)          # 서버 전달 목록 사용
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

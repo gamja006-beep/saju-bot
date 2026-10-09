@@ -82,6 +82,11 @@ function productById(id) {
   return PRODUCTS[0];
 }
 function isPaid(id) { return id !== "free"; }
+// live 모드에서 서버가 아직 준비되지 않았다고 알린 상품(현재 신청 불가). test 모드는 항상 빈 목록.
+function isHeldLive(id) {
+  var held = (window.PAY_CONFIG && window.PAY_CONFIG.heldProducts) || [];
+  return held.indexOf(PRODUCT_CODE[id]) >= 0;
+}
 
 // ---- 이메일 ----
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -453,7 +458,11 @@ function renderProducts() {
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(pr.eta) + "</div>";
     if (pr.kind !== "free") {
-      html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
+      if (isHeldLive(pr.id)) {
+        html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
+      } else {
+        html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
+      }
     }
     div.innerHTML = html;
     // 대표 3개(무료/핵심/전문가)만 우선 표시, 나머지는 '더 보기'로 펼친다. 7개 모두 DOM 유지.
@@ -538,7 +547,11 @@ function renderConfirm() {
   var area = document.getElementById("complete-area");
   var payCfg = window.PAY_CONFIG || { enabled: false, mode: "test" };
   if (isPaid(selectedProduct)) {
-    if (payCfg.enabled) {
+    if (isHeldLive(selectedProduct)) {
+      // 서버가 준비 안 됐다고 알린 상품: 결제 진입 차단(서버도 503 으로 거부).
+      area.innerHTML = "<p class=\"paid-notice\">선택하신 상품은 현재 신청 불가입니다. 다른 상품을 선택해 주세요.</p>" +
+        "<button type=\"button\" class=\"btn primary\" disabled>현재 신청 불가</button>";
+    } else if (payCfg.enabled) {
       var banner = payCfg.mode !== "live"
         ? "<p class=\"paid-notice\">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>" : "";
       area.innerHTML = banner +
@@ -580,6 +593,7 @@ function logPayError(e) {
 
 // 결제 활성 환경(테스트)에서만 호출된다. 토스 SDK v2 결제창형, 비회원 ANONYMOUS.
 function startPayment() {
+  if (isHeldLive(selectedProduct)) { return; }  // 방어적 차단(버튼은 이미 비활성)
   var status = document.getElementById("pay-status");
   status.textContent = "주문 생성 중...";
   fetchJSON("/api/orders", orderPayload()).then(function (res) {
