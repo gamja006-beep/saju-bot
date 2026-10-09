@@ -4,7 +4,9 @@
 
 하는 일:
 - 사업자 표시 정보·문의처(BIZ_* 환경변수), 법적 고지(약관·개인정보·환불)의 미확정 문구,
-  상품별 전달기한, '전문가 검토' 표현, 결제 모드·키 조합이 출시 가능한 상태인지 확인한다.
+  첫 출시 대상(BASIC·DEEP)의 전달기한, 결제 모드·키 조합이 출시 가능한 상태인지 확인한다.
+- 보류 상품(전문가·복수 대상·연간)의 전달기한·전문가 문구는 BASIC·DEEP 출시 차단과 분리해
+  '보류'로만 표시한다(해당 상품은 서버·화면에서 계속 신청 불가).
 - 미완료 항목을 한국어로 짧게 묶어 출력한다.
 
 원칙(중요):
@@ -17,16 +19,13 @@
 """
 
 import os
-import re
 
 import legal_pages
 import payments
 
 PASS = "통과"
 PENDING = "미완료"
-
-# 상품 전달기한에서 '아직 확정 안 됨'을 뜻하는 표식(자리표시 또는 '제안').
-_ETA_UNRESOLVED = ("주문 시 안내", "제안")
+HOLD = "보류"  # 의도적으로 보류 중인 상품(출시 차단 건수에 넣지 않음)
 
 
 def _result(key, label, ok, detail=""):
@@ -76,31 +75,25 @@ def check_legal_pending():
     return _result("legal", "법적 고지 미확정 문구", not pending_docs, detail)
 
 
-def _app_js_text(app_js=None):
-    if app_js is not None:
-        return app_js
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "app.js")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+def check_launch_products(env=None):
+    """첫 출시 대상(BASIC·DEEP)의 전달기한 확정 여부만 본다(보류 상품과 분리).
+    운영자가 PRODUCT_ETA_READY_<CODE>=true 로 전달기한을 확정하기 전까지는 미완료로 둔다."""
+    env = os.environ if env is None else env
+    missing = []
+    for code in payments.LAUNCH_PRODUCTS:
+        if (env.get("PRODUCT_ETA_READY_%s" % code) or "").strip().lower() != "true":
+            missing.append("PRODUCT_ETA_READY_%s" % code)
+    detail = "" if not missing else "전달기한 미확정(운영자 확정 필요): " + ", ".join(missing)
+    return _result("launch_products", "출시 상품(BASIC·DEEP) 전달기한", not missing, detail)
 
 
-def check_product_eta(app_js=None):
-    """상품별 전달기한이 자리표시('주문 시 안내')나 '제안'으로 남아 있는지 확인한다.
-    '제안'(운영 확인 전)도 확정 전이므로 미완료로 본다."""
-    text = _app_js_text(app_js)
-    etas = re.findall(r'eta:\s*"([^"]*)"', text)
-    unresolved = [e for e in etas if any(m in e for m in _ETA_UNRESOLVED)]
-    detail = "" if not unresolved else "미확정 전달기한 %d개(자리표시 또는 '제안')" % len(unresolved)
-    return _result("product_eta", "상품별 전달기한", not unresolved, detail)
-
-
-def check_expert_claim(app_js=None):
-    """'전문가' 표현이 쓰였는지 확인한다. 실제 유자격 전문가 검토인지 확정 전이면 미완료로 둔다."""
-    text = _app_js_text(app_js)
-    used = "전문가" in text
-    # 표현이 있으면 '실제 전문가 검토 여부 확정 필요'를 미완료로 보고(없으면 통과).
-    detail = "" if not used else "'전문가' 표현 사용 중 — 실제 유자격 전문가 검토 여부 확정 필요(아니면 표현/상품 수정)"
-    return _result("expert_claim", "전문가 검토 표현", not used, detail)
+def check_held_products():
+    """보류 상품(전문가·복수 대상·연간) 상태를 '보류'로만 표시한다(출시 차단 건수 제외).
+    이들의 전달기한·전문가 문구는 BASIC·DEEP 출시 조건이 아니다."""
+    hold = [c for c in payments.LIVE_HOLD_PRODUCTS if payments.product_live_blocked(c)]
+    detail = ("신청 불가 유지(전문가 검토 여부 등 확정 전까지): " + ", ".join(hold)) if hold \
+        else "모든 보류 상품이 개별 해제됨"
+    return {"key": "held_products", "label": "보류 상품(1차 출시 제외)", "status": HOLD, "detail": detail}
 
 
 def check_payment_config():
@@ -118,7 +111,7 @@ def check_payment_config():
     return _result("payment", "결제 모드·키 조합", ok, detail)
 
 
-def run_checks(app_js=None, info=None, env=None):
+def run_checks(info=None, env=None):
     """모든 점검을 수행하고 결과 리스트를 돌려준다(부작용 없음)."""
     info = legal_pages.business_info() if info is None else info
     env = os.environ if env is None else env
@@ -126,17 +119,17 @@ def run_checks(app_js=None, info=None, env=None):
         check_business_info(info, env),
         check_contact(info, env),
         check_legal_pending(),
-        check_product_eta(app_js),
-        check_expert_claim(app_js),
+        check_launch_products(env),
         check_payment_config(),
+        check_held_products(),  # 정보성(보류) — 출시 차단 건수에 포함하지 않음
     ]
 
 
 def format_report(results):
+    marks = {PASS: "[O]", PENDING: "[ ]", HOLD: "[~]"}
     lines = ["== 출시 전 점검 (읽기 전용) =="]
     for r in results:
-        mark = "[O]" if r["status"] == PASS else "[ ]"
-        line = "%s %s: %s" % (mark, r["label"], r["status"])
+        line = "%s %s: %s" % (marks.get(r["status"], "[ ]"), r["label"], r["status"])
         if r["detail"]:
             line += " — " + r["detail"]
         lines.append(line)
@@ -155,7 +148,8 @@ def format_report(results):
 def main():
     results = run_checks()
     print(format_report(results))
-    return 0 if all(r["status"] == PASS for r in results) else 1
+    # 출시 차단은 '미완료(PENDING)'만 센다. '보류(HOLD)'는 의도적 상태라 종료코드에 넣지 않는다.
+    return 1 if any(r["status"] == PENDING for r in results) else 0
 
 
 if __name__ == "__main__":

@@ -133,25 +133,37 @@ def launch_blockers():
     return reasons
 
 
-# 라이브 판매를 상품별로 더 확인해야 하는 상품(전문가 검토·복수 대상·연간). 확인 전까지 서버에서
-# 차단하며, 상품별 환경변수 PRODUCT_LIVE_READY_<CODE>=true 로만 개별 해제한다.
+# 첫 유료 출시 대상(기본·심층). 전달기한을 운영자가 확정(PRODUCT_ETA_READY_<CODE>=true)하기
+# 전까지는 live 주문을 차단한다. 전달기한 문구는 임의로 확정하지 않는다.
+LAUNCH_PRODUCTS = ("BASIC", "DEEP")
+# 라이브 판매를 상품별로 더 확인해야 하는 보류 상품(전문가 검토·복수 대상·연간). 확인 전까지
+# 서버에서 차단하며, 상품별 환경변수 PRODUCT_LIVE_READY_<CODE>=true 로만 개별 해제한다.
 LIVE_HOLD_PRODUCTS = ("EXPERT", "LIFE_DESIGN", "RELATION_BUSINESS", "ANNUAL_VIP")
+
+
+def _flag_true(name):
+    return _env(name).lower() == "true"
 
 
 def product_live_blocked(product_code):
     """상품별 라이브 판매 차단 사유(없으면 None).
 
-    전문가·복수 대상·연간 상품은 운영 준비 확인 전까지 차단한다. 빠른 출시 대상(기본·심층)과
-    알 수 없는 코드는 여기서 막지 않는다(후자는 create_order 가 검증). test 모드 호출자는
-    이 함수를 적용하지 않는다(합성 테스트로 모든 상품 흐름 유지)."""
-    if product_code in LIVE_HOLD_PRODUCTS and _env("PRODUCT_LIVE_READY_%s" % product_code).lower() != "true":
+    - 출시 대상(기본·심층): 전달기한이 PRODUCT_ETA_READY_<CODE> 로 확정되기 전까지 차단한다
+      (보류 상품의 전달기한·전문가 문구와 무관하게 이 두 상품만 개별 판단).
+    - 보류 상품(전문가·복수 대상·연간): PRODUCT_LIVE_READY_<CODE> 확인 전까지 차단한다.
+    - 그 외/알 수 없는 코드: 여기서 막지 않는다(create_order 가 검증).
+    test 모드 호출자는 이 함수를 적용하지 않는다(합성 테스트로 모든 상품 흐름 유지)."""
+    if product_code in LAUNCH_PRODUCTS and not _flag_true("PRODUCT_ETA_READY_%s" % product_code):
+        return "상품 '%s' 전달기한 미확정" % product_code
+    if product_code in LIVE_HOLD_PRODUCTS and not _flag_true("PRODUCT_LIVE_READY_%s" % product_code):
         return "상품 '%s' 라이브 판매 준비 미확정" % product_code
     return None
 
 
 def held_live_products():
-    """현재 live 판매가 막혀 있는 상품 코드 목록(브라우저 안내·결제 진입 차단용)."""
-    return [c for c in LIVE_HOLD_PRODUCTS if product_live_blocked(c)]
+    """현재 live 판매가 막혀 있는 상품 코드 목록(브라우저 안내·결제 진입 차단용).
+    보류 상품과, 전달기한 미확정인 출시 대상(기본·심층)을 모두 포함한다."""
+    return [c for c in (LAUNCH_PRODUCTS + LIVE_HOLD_PRODUCTS) if product_live_blocked(c)]
 
 
 def live_payments_ready():
