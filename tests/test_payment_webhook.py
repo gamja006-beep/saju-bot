@@ -388,13 +388,63 @@ class TimeoutBoundsTest(unittest.TestCase):
     def test_toss_lookup_timeout_at_most_2s(self):
         self.assertLessEqual(payments.TOSS_WEBHOOK_TIMEOUT_SEC, 2)
 
-    def test_n8n_channel_timeout_at_most_3s(self):
+    def test_n8n_telegram_timeout_at_most_3s(self):
         self.assertLessEqual(notifier.NOTIFY_HTTP_TIMEOUT, 3)
 
+    def test_n8n_email_timeout_allows_slow_gmail_response(self):
+        self.assertEqual(notifier.NOTIFY_EMAIL_TIMEOUT, 6)
+
     def test_webhook_total_external_budget_within_8s(self):
-        # 조회 1회 + n8n 두 채널 순차 = 최악 외부통신 상한.
-        budget = payments.TOSS_WEBHOOK_TIMEOUT_SEC + 2 * notifier.NOTIFY_HTTP_TIMEOUT
+        # 조회 1회 + n8n 두 채널 병렬 = 최악 외부통신 상한.
+        budget = payments.TOSS_WEBHOOK_TIMEOUT_SEC + max(
+            notifier.NOTIFY_EMAIL_TIMEOUT, notifier.NOTIFY_HTTP_TIMEOUT)
         self.assertLessEqual(budget, 8)
+
+    def test_immediate_notify_passes_channel_specific_timeouts(self):
+        _clear_env()
+        _enable_payments()
+        _enable_notify()
+        store = payments.InMemoryOrderStore()
+        order = payments.create_order(store, "EXPERT", "customer@example.com", {})
+        oid = order["orderId"]
+        payments.approve_payment(store, "pk_test", oid, order["amount"],
+                                 confirm_fn=lambda **kw: {"orderId": oid,
+                                     "totalAmount": order["amount"], "status": "DONE"})
+        seen = {}
+        saved = notifier._http_post
+        def fake(url, body, secret, timeout):
+            seen[body["channel"]] = timeout
+            return _n8n_ok(body)
+        notifier._http_post = fake
+        try:
+            result = notifier.notify_order(store, oid)
+        finally:
+            notifier._http_post = saved
+            _clear_env()
+        self.assertEqual(result["sent"], 2)
+        self.assertEqual(seen, {"email": 6, "telegram": 3})
+
+    def test_two_channels_run_together_and_store_updates_after_response(self):
+        import threading
+        _clear_env()
+        _enable_payments()
+        _enable_notify()
+        store = payments.InMemoryOrderStore()
+        order = payments.create_order(store, "EXPERT", "customer@example.com", {})
+        oid = order["orderId"]
+        payments.approve_payment(store, "pk_test", oid, order["amount"],
+                                 confirm_fn=lambda **kw: {"orderId": oid,
+                                     "totalAmount": order["amount"], "status": "DONE"})
+        together = threading.Barrier(2)
+        def fake(body):
+            together.wait(timeout=2)
+            return _n8n_ok(body)
+        try:
+            result = notifier.notify_order(store, oid, http_post=fake)
+        finally:
+            _clear_env()
+        self.assertEqual(result["sent"], 2)
+        self.assertEqual({r["status"] for r in store.get_notifications_for_order(oid)}, {"SENT"})
 
     def test_toss_lookup_passes_bounded_timeout(self):
         # _toss_get_payment_by_order 가 urlopen 에 <=2초 timeout 을 전달하는지(네트워크 없이 확인).
