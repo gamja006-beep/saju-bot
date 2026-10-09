@@ -27,14 +27,17 @@ import secrets
 import datetime
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 import payments
 
 # n8n Header Auth 와 맞출 인증 헤더 이름(값은 N8N_NOTIFICATION_HEADER_SECRET).
 # 서버 계약 고정: 헤더 이름은 반드시 X-AlphaLab-Notify-Token 이어야 n8n Header Auth 통과.
 NOTIFY_HEADER_NAME = "X-AlphaLab-Notify-Token"
-# 채널별 n8n 요청 상한 3초. 웹훅 즉시 전송 시 두 채널 순차 처리해도 6초(+Toss 조회 2초=8초).
+# n8n Gmail 응답은 실제로 3초를 넘을 수 있다. 이메일만 6초, 텔레그램은 3초.
+# 두 채널을 병렬로 기다려 웹훅 외부 호출 상한을 Toss 조회 2초 + 최대 6초 = 8초로 둔다.
 NOTIFY_HTTP_TIMEOUT = 3
+NOTIFY_EMAIL_TIMEOUT = 6
 _CLAIM_LIMIT = 50
 
 
@@ -162,12 +165,19 @@ def _process(store, now, http_post, limit, order_id=None):
         now, lease_until, lease_token, limit=limit, order_id=order_id)
 
     url, secret = cfg["_url"], cfg["_secret"]
-    poster = http_post or (lambda body: _http_post(url, body, secret))
+    poster = http_post or (lambda body: _http_post(
+        url, body, secret,
+        timeout=NOTIFY_EMAIL_TIMEOUT if body["channel"] == "email" else NOTIFY_HTTP_TIMEOUT))
     counts = {"status": "ran", "claimed": len(claimed), "sent": 0, "failed": 0, "unknown": 0}
-    for job in claimed:
+    # HTTP 호출만 동시에 수행한다. 저장소 상태 갱신은 요청 스레드에서 순서대로 처리한다.
+    # 두 future 모두 종료될 때까지 기다리므로 응답 후 백그라운드 발송은 없다.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(
+            lambda job: classify(job["order_id"], job["channel"], job["event_id"], poster),
+            claimed))
+    for job, (result, err) in zip(claimed, results):
         oid, ch, eid = job["order_id"], job["channel"], job["event_id"]
         attempts = int(job.get("attempts", 0)) + 1
-        result, err = classify(oid, ch, eid, poster)
         if result == "sent":
             store.mark_notification_sent(oid, ch, now, lease_token)
             counts["sent"] += 1
