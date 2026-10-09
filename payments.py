@@ -32,7 +32,11 @@ CURRENCY = "KRW"
 
 # 토스페이먼츠 결제 승인 공식 고정 URL (사용자 입력 금지)
 TOSS_CONFIRM_URL = "https://api.tosspayments.com/v1/payments/confirm"
+# 결제 조회(orderId 기준) 공식 고정 URL prefix. 웹훅 본문을 신뢰하지 않고 재검증할 때 사용.
+TOSS_PAYMENT_BY_ORDER_URL = "https://api.tosspayments.com/v1/payments/orders/"
 HTTP_TIMEOUT_SEC = 10
+# 웹훅 핸들러는 10초 안에 응답해야 하므로 조회 timeout 을 더 짧게 둔다.
+TOSS_WEBHOOK_TIMEOUT_SEC = 8
 PRIVATE_DATA_RETENTION_DAYS = 90
 
 _SUCCESS_STATES = ("DONE", "APPROVED", "PAID")
@@ -213,10 +217,12 @@ class InMemoryOrderStore:
         with self._lock:
             return [dict(v) for (oid, _), v in self.notifications.items() if oid == order_id]
 
-    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50):
+    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50, order_id=None):
         """재시도 대상(PENDING/FAILED, next_retry 도래, lease 만료)을 원자적으로 선점한다.
 
         선점 시 lease_token 을 각인한다(펜싱). 결과 기록은 이 토큰을 제시해야 반영된다.
+        order_id 가 주어지면 그 주문의 작업만 선점한다(결제 직후 즉시 알림/수동 재전송).
+        SENT/UNKNOWN 은 어떤 경우에도 선점하지 않는다(중복 발송·UNKNOWN 자동 재전송 방지).
         """
         self.calls += 1
         claimed = []
@@ -225,6 +231,8 @@ class InMemoryOrderStore:
             for r in items:
                 if len(claimed) >= limit:
                     break
+                if order_id is not None and r["order_id"] != order_id:
+                    continue  # 특정 주문만 대상
                 if r["status"] not in ("PENDING", "FAILED"):
                     continue  # SENT/UNKNOWN 은 자동 재시도 대상이 아니다
                 if r.get("next_retry_at") and r["next_retry_at"] > now:
@@ -409,20 +417,25 @@ class PostgresOrderStore:
                     "lease_until", "next_retry_at"]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
 
-    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50):
-        """재시도 대상을 원자적으로 선점(FOR UPDATE SKIP LOCKED + lease + 펜싱 토큰)."""
+    def claim_pending_notifications(self, now, lease_until, lease_token, limit=50, order_id=None):
+        """재시도 대상을 원자적으로 선점(FOR UPDATE SKIP LOCKED + lease + 펜싱 토큰).
+
+        order_id 가 주어지면 그 주문만 대상으로 한다(즉시 알림/수동 재전송). NULL 이면 전체 대기열.
+        SENT/UNKNOWN 은 선점하지 않는다.
+        """
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "UPDATE order_notifications o SET lease_until=%s, lease_token=%s, updated_at=%s"
                 " FROM ("
                 "   SELECT order_id, channel FROM order_notifications"
                 "   WHERE status IN ('PENDING','FAILED')"
+                "     AND (%s::text IS NULL OR order_id=%s)"
                 "     AND (next_retry_at IS NULL OR next_retry_at<=%s)"
                 "     AND (lease_until IS NULL OR lease_until<=%s)"
                 "   ORDER BY created_at LIMIT %s FOR UPDATE SKIP LOCKED) s"
                 " WHERE o.order_id=s.order_id AND o.channel=s.channel"
                 " RETURNING o.order_id, o.channel, o.event_id, o.attempts",
-                (lease_until, lease_token, now, now, now, int(limit)))
+                (lease_until, lease_token, now, order_id, order_id, now, now, int(limit)))
             cols = ["order_id", "channel", "event_id", "attempts"]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
 
@@ -509,6 +522,89 @@ def _toss_confirm(payment_key, order_id, amount):
     )
     with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SEC) as resp:  # noqa: S310 (고정 URL)
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _toss_get_payment_by_order(order_id, timeout=TOSS_WEBHOOK_TIMEOUT_SEC):
+    """orderId 로 결제를 조회한다(서버 시크릿 키, 고정 URL, 짧은 timeout).
+
+    웹훅 본문은 서명이 없어 신뢰하지 않으므로, 상태·금액·주문을 이 조회 결과로 재검증한다.
+    시크릿/paymentKey 는 로그·반환 밖으로 노출하지 않는다.
+    """
+    secret = _env("TOSS_SECRET_KEY")
+    if not secret:
+        raise PaymentConfigError("secret missing")
+    import urllib.parse
+    url = TOSS_PAYMENT_BY_ORDER_URL + urllib.parse.quote(str(order_id), safe="")
+    auth = base64.b64encode((secret + ":").encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        url, method="GET", headers={"Authorization": "Basic " + auth})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (고정 URL)
+        return json.loads(resp.read().decode("utf-8"))
+
+
+# 토스 웹훅에서 처리하는 유일한 이벤트 타입.
+TOSS_WEBHOOK_EVENT = "PAYMENT_STATUS_CHANGED"
+
+
+def handle_toss_webhook(store, event, lookup_fn=None):
+    """토스 결제 웹훅 1건을 처리한다(Flask 비의존·순수 로직, 네트워크는 lookup_fn 으로 주입 가능).
+
+    - PAYMENT_STATUS_CHANGED 외 이벤트/상태는 안전하게 무시(2xx).
+    - 웹훅 본문을 신뢰하지 않고 orderId 로 토스 결제를 재조회해 status=DONE·orderId·금액을 대조.
+    - 검증 성공 시 기존 approve_payment 를 멱등 호출(이미 PAID 면 재처리 없음).
+    - 실패·금액/주문 불일치·조회 실패는 PAID 로 올리지 않는다.
+    - 반환: {"status": <label>, "http": <code>, "notify_order_id": <order_id 또는 None>}.
+      notify_order_id 가 있으면 호출측(route)에서 해당 주문의 PENDING 알림을 즉시 처리한다.
+      이 함수는 알림을 직접 보내지 않는다(notifier 순환 import 회피).
+    """
+    if not isinstance(event, dict) or event.get("eventType") != TOSS_WEBHOOK_EVENT:
+        return {"status": "ignored_event", "http": 200, "notify_order_id": None}
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+    order_id = data.get("orderId")
+    if not order_id or not isinstance(order_id, str):
+        return {"status": "ignored_event", "http": 200, "notify_order_id": None}
+
+    order = store.get_order(order_id)
+    if not order:
+        # 우리 주문이 아니면(또는 아직 없음) 안전하게 무시. PAID 처리 금지.
+        return {"status": "ignored_unknown_order", "http": 200, "notify_order_id": None}
+
+    fn = lookup_fn or _toss_get_payment_by_order
+    try:
+        payment = fn(order_id)
+    except Exception:
+        # 네트워크/timeout/조회 실패: PAID 처리 금지. 2xx 아님 → 토스가 재시도.
+        return {"status": "lookup_failed", "http": 502, "notify_order_id": None}
+
+    if not isinstance(payment, dict):
+        return {"status": "lookup_failed", "http": 502, "notify_order_id": None}
+    status = payment.get("status")
+    if status not in _SUCCESS_STATES:
+        # DONE 등 성공 상태가 아니면 안전 무시(결제 취소/대기 등). PAID 처리 금지.
+        return {"status": "ignored_status", "http": 200, "notify_order_id": None}
+    if str(payment.get("orderId")) != order_id:
+        return {"status": "rejected_order", "http": 400, "notify_order_id": None}
+    try:
+        total = int(payment.get("totalAmount"))
+    except (TypeError, ValueError):
+        return {"status": "rejected_amount", "http": 400, "notify_order_id": None}
+    if total != order["amount"]:
+        return {"status": "rejected_amount", "http": 400, "notify_order_id": None}
+    payment_key = payment.get("paymentKey")
+    if not payment_key:
+        return {"status": "rejected_order", "http": 400, "notify_order_id": None}
+
+    # 멱등 PAID 전환: confirm_fn 은 방금 재조회한(신뢰 가능한) 결제 객체를 그대로 반환.
+    # 이미 PAID 인 주문은 approve_payment 가 재처리 없이 idempotent 로 반환한다.
+    try:
+        result = approve_payment(store, payment_key, order_id, total,
+                                 confirm_fn=lambda **kw: payment)
+    except OrderValidationError:
+        # 이미 다른 경로로 처리됐거나 PAID 불가 상태: PAID 상태는 건드리지 않고
+        # 혹시 남은 PENDING 알림만 처리하도록 한다(중복 결제처리 없음).
+        return {"status": "already_paid", "http": 200, "notify_order_id": order_id}
+    label = "already_paid" if result.get("idempotent") else "verified"
+    return {"status": label, "http": 200, "notify_order_id": order_id}
 
 
 def approve_payment(store, payment_key, order_id, amount, confirm_fn=None):

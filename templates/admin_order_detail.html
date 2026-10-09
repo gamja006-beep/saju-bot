@@ -56,6 +56,17 @@
       <div class="srow"><span class="sv">대기 중인 알림 작업이 없습니다.</span></div>
       {% endfor %}
     </div>
+    {% if o.notify.ready %}
+    <div class="admin-actions">
+      <!-- POST 전용: 해당 주문의 실패·대기 알림만 재전송(불명확 상태 제외). GET 은 405. -->
+      <form method="post" action="/admin/orders/{{ o.order_id }}/notifications/retry">
+        <button type="submit" class="btn primary">실패 알림 재전송</button>
+      </form>
+    </div>
+    {% endif %}
+    {% if o.retry_result %}
+    <p class="sub" id="retry-result" aria-live="polite">{{ o.retry_result }}</p>
+    {% endif %}
 
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
   </main>

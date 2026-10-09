@@ -582,18 +582,10 @@ def admin_orders():
     return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows)))
 
 
-@admin_bp.route("/admin/orders/<order_id>", methods=["GET"])
-@require_admin
-def admin_order_detail(order_id):
-    store = _get_store()
-    try:
-        order = store.get_order(order_id)
-    except Exception:
-        abort(500)
-    if not order or order.get("status") != "PAID":
-        abort(404)  # PAID 아닌/존재하지 않는 주문 접근 차단
+def _build_order_detail_view(store, order, order_id, retry_result=None):
+    """주문 상세 화면 데이터. PII/비밀값 없는 한국어 표시 전용(payment_key·만료일 등 제외)."""
     payload = _decrypt_payload(store, order_id)  # 한 번만 복호화
-    view = {
+    return {
         "order_id": order.get("order_id"),
         "product_name": _product_name(order.get("product_code")),
         "amount": order.get("amount"),
@@ -604,7 +596,59 @@ def admin_order_detail(order_id):
         "report_text": _build_copy_package(order, payload),
         "notifications": _humanize_notifications(store, order_id),
         "notify": notifier.notify_status_view(),
+        "retry_result": retry_result,  # 수동 재전송 결과 메시지(없으면 None)
     }
+
+
+@admin_bp.route("/admin/orders/<order_id>", methods=["GET"])
+@require_admin
+def admin_order_detail(order_id):
+    store = _get_store()
+    try:
+        order = store.get_order(order_id)
+    except Exception:
+        abort(500)
+    if not order or order.get("status") != "PAID":
+        abort(404)  # PAID 아닌/존재하지 않는 주문 접근 차단
+    view = _build_order_detail_view(store, order, order_id)
+    return _with_noindex(render_template("admin_order_detail.html", o=view))
+
+
+def _retry_result_message(summary):
+    """재전송 집계를 비밀값 없는 한국어 메시지로. 설정 미완료는 그 사실만 알린다."""
+    if not isinstance(summary, dict) or summary.get("status") == "disabled":
+        return "알림 설정이 비활성화되어 있어 전송하지 않았습니다."
+    sent = summary.get("sent", 0)
+    failed = summary.get("failed", 0)
+    unknown = summary.get("unknown", 0)
+    claimed = summary.get("claimed", 0)
+    if claimed == 0:
+        return "재전송할 실패·대기 알림이 없습니다. (불명확 상태는 수동 확인 대상이라 제외됩니다.)"
+    return ("재전송 완료 — 발송 %d건, 실패 %d건, 불명확 %d건 (대상 %d건)."
+            % (sent, failed, unknown, claimed))
+
+
+@admin_bp.route("/admin/orders/<order_id>/notifications/retry", methods=["POST"])
+@require_admin
+def admin_order_notifications_retry(order_id):
+    """해당 주문의 실패(FAILED)·대기(PENDING) 알림만 즉시 재전송한다(POST 전용).
+
+    - UNKNOWN(발송 여부 불명확)은 자동 재전송하지 않는다(claim 단계에서 제외).
+    - 부작용은 POST 에서만; GET 은 Flask 라우팅 단계에서 405.
+    - 결과는 비밀값 없이 한국어로 표시한다."""
+    store = _get_store()
+    try:
+        order = store.get_order(order_id)
+    except Exception:
+        abort(500)
+    if not order or order.get("status") != "PAID":
+        abort(404)
+    try:
+        summary = notifier.notify_order(store, order_id)
+    except Exception:
+        abort(500)  # 내부 오류·비밀값 비노출
+    view = _build_order_detail_view(store, order, order_id,
+                                    retry_result=_retry_result_message(summary))
     return _with_noindex(render_template("admin_order_detail.html", o=view))
 
 

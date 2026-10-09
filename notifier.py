@@ -139,12 +139,12 @@ def classify(order_id, channel, event_id, http_post):
     return "unknown", "response_unconfirmed"
 
 
-def drain(store, now=None, http_post=None, limit=_CLAIM_LIMIT):
-    """미발송 알림 작업을 선점해 n8n 에 전송하고 결과를 기록한다.
+def _process(store, now, http_post, limit, order_id=None):
+    """선점→전송→결과기록 공통 루프. order_id 가 있으면 그 주문만, 없으면 전체 대기열.
 
     - 설정이 비활성/미완료면 **외부 요청 없이** 그 상태만 반환한다.
     - PENDING/FAILED(재시도 시각 도래)만 선점한다. SENT/UNKNOWN 은 건너뛴다.
-    - lease 로 동시 worker·관리자 요청의 중복 실행을 막고, lease 만료분은 회수한다.
+    - lease 로 동시 worker·관리자 요청·즉시 알림의 중복 실행을 막고, lease 만료분은 회수한다.
     """
     cfg = notify_config()
     if not cfg["ready"]:
@@ -154,10 +154,11 @@ def drain(store, now=None, http_post=None, limit=_CLAIM_LIMIT):
 
     now = now or payments._now()
     lease_until = now + datetime.timedelta(seconds=payments.NOTIFY_LEASE_SECONDS)
-    # 이 drain 실행의 펜싱 토큰. 선점한 작업에 각인하고, 결과 기록 시 토큰이 일치할 때만
+    # 이 실행의 펜싱 토큰. 선점한 작업에 각인하고, 결과 기록 시 토큰이 일치할 때만
     # 반영한다 → lease 만료 후 뒤늦게 깨어난 이전 worker 가 새 worker 의 결과를 덮어쓰지 못한다.
     lease_token = secrets.token_hex(8)
-    claimed = store.claim_pending_notifications(now, lease_until, lease_token, limit=limit)
+    claimed = store.claim_pending_notifications(
+        now, lease_until, lease_token, limit=limit, order_id=order_id)
 
     url, secret = cfg["_url"], cfg["_secret"]
     poster = http_post or (lambda body: _http_post(url, body, secret))
@@ -178,3 +179,29 @@ def drain(store, now=None, http_post=None, limit=_CLAIM_LIMIT):
             store.mark_notification_unknown(oid, ch, now, attempts, err, lease_token)
             counts["unknown"] += 1
     return counts
+
+
+def drain(store, now=None, http_post=None, limit=_CLAIM_LIMIT):
+    """전체 미발송 아웃박스를 선점해 n8n 에 전송한다(운영 진단·수동 복구용)."""
+    return _process(store, now, http_post, limit, order_id=None)
+
+
+def notify_order(store, order_id, now=None, http_post=None, limit=_CLAIM_LIMIT):
+    """특정 주문의 PENDING/FAILED 알림만 즉시 전송한다(결제 commit 직후·관리자 수동 재전송).
+
+    전역 대기열 전체가 아니라 현재 order_id 만 대상으로 한다. UNKNOWN/SENT 는 제외된다.
+    """
+    return _process(store, now, http_post, limit, order_id=order_id)
+
+
+def notify_order_safe(store, order_id, now=None, http_post=None):
+    """결제 성공 경로에서 호출하는 예외 안전 래퍼.
+
+    알림 발송 실패·설정 오류·저장소 오류가 결제 성공 응답을 깨뜨리지 않도록 모든 예외를
+    삼킨다(결제 PAID 와 고객 성공 화면은 알림 결과와 무관하게 유지). 비밀값은 다루지 않는다.
+    반환: 집계 dict 또는 None(예외 억제 시).
+    """
+    try:
+        return notify_order(store, order_id, now=now, http_post=http_post)
+    except Exception:
+        return None

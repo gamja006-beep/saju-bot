@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, render_template
 from saju_engine import compute_saju, SajuInputError
 import saju_insights
 import payments
+import notifier
 import admin
 
 app = Flask(__name__)
@@ -295,9 +296,33 @@ def payment_success():
     except Exception:
         return render_template("payment_fail.html",
                                message="결제 처리 중 오류가 발생했습니다."), 500
+    # DB commit(주문 PAID + 아웃박스) 이후, 해당 주문의 PENDING 알림을 즉시 전송한다.
+    # 발송 실패·timeout 은 아웃박스에 기록될 뿐 결제 성공과 PAID 상태에 영향을 주지 않는다
+    # (notify_order_safe 가 모든 예외를 삼킨다). 백그라운드 thread/fire-and-forget 미사용.
+    notifier.notify_order_safe(ORDER_STORE, approval.get("orderId") or order_id)
     # 고객 문의용 주문번호만 노출(paymentKey/이메일/내부값 비노출).
     return render_template("payment_success.html", mode=payments.payment_mode(),
                            order_id=approval.get("orderId"))
+
+
+@app.route('/webhooks/toss', methods=['POST'])
+def toss_webhook():
+    """토스 결제 웹훅. PAYMENT_STATUS_CHANGED 만 처리하고 본문을 신뢰하지 않는다
+    (orderId 로 결제를 재조회해 status=DONE·orderId·금액 대조 후 멱등 PAID).
+
+    - 10초 안에 응답: 조회 timeout 을 짧게 둔다(payments.TOSS_WEBHOOK_TIMEOUT_SEC).
+    - 검증 성공/이미 PAID 면 해당 주문의 PENDING 알림만 즉시 전송(결제 실패 처리와 무관).
+    - 비밀키·paymentKey·이메일·상담정보는 응답/로그에 넣지 않는다(상태 라벨만 반환)."""
+    event = request.get_json(silent=True) or {}
+    try:
+        outcome = payments.handle_toss_webhook(ORDER_STORE, event)
+    except Exception:
+        # 내부 오류: 비밀값 비노출. 2xx 아님 → 토스가 재시도.
+        return jsonify({"status": "error"}), 500
+    # 검증·멱등 PAID 이후에만 알림 전송(PAID 상태는 알림 결과와 무관하게 유지).
+    if outcome.get("notify_order_id"):
+        notifier.notify_order_safe(ORDER_STORE, outcome["notify_order_id"])
+    return jsonify({"status": outcome["status"]}), outcome["http"]
 
 
 @app.route('/payment/fail', methods=['GET'])
