@@ -509,5 +509,167 @@ class RecipientEmailCopyTest(_Base):
         self.assertEqual(order, sorted(order))
 
 
+# ---- 9. 발송 작업 목록: 서버측 필터·정렬·100건 제한 ----
+def _td(days):
+    return datetime.timedelta(days=days)
+
+
+class StoreListFilterTest(_Base):
+    def _mk(self, code, pk, when, sent=False):
+        o = payments.create_order(self.store, code, "c@example.test", {"birth_date": "1990-05-15"})
+        payments.approve_payment(self.store, pk, o["orderId"], o["amount"], confirm_fn=_toss_ok)
+        self.store.orders[o["orderId"]]["paid_at"] = when
+        if sent:
+            self.store.orders[o["orderId"]]["report_sent_at"] = when
+        return o["orderId"]
+
+    def test_default_waiting_first_then_oldest(self):
+        t = _now()
+        w_old = self._mk("BASIC", "p1", t - _td(3))
+        w_new = self._mk("BASIC", "p2", t - _td(1))
+        d_old = self._mk("DEEP", "p3", t - _td(4), sent=True)
+        d_new = self._mk("DEEP", "p4", t - _td(2), sent=True)
+        ids = [r["order_id"] for r in self.store.list_paid_orders()]
+        self.assertEqual(ids, [w_old, w_new, d_old, d_new])  # 대기 먼저, 각 그룹 오래된 순
+
+    def test_filter_waiting_only(self):
+        t = _now()
+        w1 = self._mk("BASIC", "p1", t - _td(2))
+        w2 = self._mk("BASIC", "p2", t - _td(1))
+        self._mk("DEEP", "p3", t - _td(5), sent=True)
+        ids = [r["order_id"] for r in self.store.list_paid_orders(dispatch="waiting")]
+        self.assertEqual(ids, [w1, w2])
+
+    def test_filter_done_only(self):
+        t = _now()
+        self._mk("BASIC", "p1", t - _td(2))
+        d1 = self._mk("DEEP", "p2", t - _td(5), sent=True)
+        d2 = self._mk("DEEP", "p3", t - _td(3), sent=True)
+        ids = [r["order_id"] for r in self.store.list_paid_orders(dispatch="done")]
+        self.assertEqual(ids, [d1, d2])
+
+    def test_filter_and_sort_applied_before_limit(self):
+        # 대기 3 + 완료 1(가장 오래됨), limit=2, 전체 → 대기 오래된 2건만(완료가 limit 에 밀려
+        # 대기를 밀어내지 않음). 100건 먼저 가져와 화면에서 거르는 방식이 아님을 보장.
+        t = _now()
+        a = self._mk("BASIC", "pa", t - _td(5))
+        b = self._mk("BASIC", "pb", t - _td(4))
+        self._mk("BASIC", "pc", t - _td(3))
+        self._mk("DEEP", "pd", t - _td(10), sent=True)  # 가장 오래됐지만 완료 → 뒤로
+        ids = [r["order_id"] for r in self.store.list_paid_orders(limit=2)]
+        self.assertEqual(ids, [a, b])
+
+
+class _ListCur:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        self.conn.sql = sql
+        self.conn.params = params
+
+    def fetchall(self):
+        return []
+
+
+class _ListConn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def cursor(self):
+        return _ListCur(self)
+
+
+class PgListFilterSqlTest(unittest.TestCase):
+    def _store(self, fake):
+        s = payments.PostgresOrderStore.__new__(payments.PostgresOrderStore)
+        s._connect = lambda: fake
+        return s
+
+    def test_waiting_sql_filters_null_and_sorts(self):
+        fake = _ListConn()
+        self._store(fake).list_paid_orders(dispatch="waiting")
+        self.assertIn("AND report_sent_at IS NULL", fake.sql)
+        self.assertIn("ORDER BY (report_sent_at IS NOT NULL), paid_at ASC", fake.sql)
+        self.assertIn("LIMIT", fake.sql)
+
+    def test_done_sql_filters_not_null(self):
+        fake = _ListConn()
+        self._store(fake).list_paid_orders(dispatch="done")
+        self.assertIn("AND report_sent_at IS NOT NULL", fake.sql)
+
+    def test_all_sql_has_no_dispatch_filter(self):
+        fake = _ListConn()
+        self._store(fake).list_paid_orders(dispatch=None)
+        self.assertNotIn("AND report_sent_at", fake.sql)  # WHERE 에 발송 상태 필터 없음
+        self.assertIn("ORDER BY (report_sent_at IS NOT NULL), paid_at ASC", fake.sql)
+
+
+class AdminFilterRouteTest(_Base):
+    def _mk(self, code, pk, email, sent, when):
+        o = payments.create_order(self.store, code, email, {"birth_date": "1990-05-15"})
+        payments.approve_payment(self.store, pk, o["orderId"], o["amount"], confirm_fn=_toss_ok)
+        self.store.orders[o["orderId"]]["paid_at"] = when
+        if sent:
+            self.store.orders[o["orderId"]]["report_sent_at"] = when
+        return o["orderId"]
+
+    def _get(self, qs=""):
+        r = self.c.get("/admin/orders" + qs, headers=_auth())
+        self.assertEqual(r.status_code, 200)
+        return r.get_data(as_text=True)
+
+    def test_requires_auth(self):
+        self.assertEqual(self.c.get("/admin/orders?status=waiting").status_code, 401)
+
+    def test_filter_bar_present(self):
+        body = self._get()
+        for label in ("전체", "발송 대기", "발송 완료"):
+            self.assertIn(label, body)
+        self.assertIn('href="/admin/orders?status=waiting"', body)
+        self.assertIn('href="/admin/orders?status=done"', body)
+
+    def test_waiting_filter_excludes_done_keeps_mask(self):
+        w = self._mk("BASIC", "pw", "wait@example.test", False, _now() - _td(2))
+        d = self._mk("DEEP", "pd", "done@example.test", True, _now() - _td(3))
+        body = self._get("?status=waiting")
+        self.assertIn(w, body)
+        self.assertNotIn(d, body)
+        self.assertIn("wa***", body)            # 마스킹 유지
+        self.assertNotIn("do***", body)         # 완료 주문(및 그 이메일) 미표시
+
+    def test_done_filter_excludes_waiting(self):
+        w = self._mk("BASIC", "pw", "wait@example.test", False, _now() - _td(2))
+        d = self._mk("DEEP", "pd", "done@example.test", True, _now() - _td(3))
+        body = self._get("?status=done")
+        self.assertIn(d, body)
+        self.assertNotIn(w, body)
+
+    def test_default_waiting_before_done(self):
+        w = self._mk("BASIC", "pw", "wait@example.test", False, _now() - _td(1))
+        d = self._mk("DEEP", "pd", "done@example.test", True, _now() - _td(9))  # 더 오래됨
+        body = self._get()
+        self.assertLess(body.index(w), body.index(d))  # 완료가 더 오래돼도 대기가 먼저
+
+    def test_empty_messages_per_filter(self):
+        self.assertIn("발송 대기 중인 주문이 없습니다.", self._get("?status=waiting"))
+        self.assertIn("발송 완료된 주문이 없습니다.", self._get("?status=done"))
+        self.assertIn("결제 완료된 주문이 없습니다.", self._get())
+
+    def test_invalid_status_defaults_to_all(self):
+        w = self._mk("BASIC", "pw", "wait@example.test", False, _now())
+        body = self._get("?status=bogus")
+        self.assertIn(w, body)  # 알 수 없는 값은 전체로 처리
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

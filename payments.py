@@ -281,13 +281,19 @@ class InMemoryOrderStore:
         r = self.private.get(order_id)
         return dict(r) if r else None
 
-    def list_paid_orders(self, limit=100):
-        """읽기 전용: PAID 주문만 결제일(paid_at) 최신순으로 최대 limit건."""
+    def list_paid_orders(self, limit=100, dispatch=None):
+        """읽기 전용: PAID 주문. dispatch=None(전체)·'waiting'·'done' 으로 **서버에서 먼저 거른 뒤**
+        '발송 대기 먼저, 그룹 내 결제일 오래된 순'으로 정렬하고 limit 을 적용한다.
+        (거르기·정렬을 limit 보다 먼저 하므로 대기 주문이 100건 제한에 밀려 누락되지 않는다.)"""
         self.calls += 1
         paid = [dict(r) for r in self.orders.values() if r.get("status") == "PAID"]
-        paid.sort(
-            key=lambda r: r.get("paid_at") or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
-            reverse=True)
+        if dispatch == "waiting":
+            paid = [r for r in paid if not r.get("report_sent_at")]
+        elif dispatch == "done":
+            paid = [r for r in paid if r.get("report_sent_at")]
+        _min = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+        # 1) 발송 대기(미발송)=0 이 먼저, 2) 그룹 내 결제일 오래된 순(asc).
+        paid.sort(key=lambda r: (1 if r.get("report_sent_at") else 0, r.get("paid_at") or _min))
         return paid[:limit]
 
     def mark_report_sent(self, order_id, now):
@@ -507,13 +513,21 @@ class PostgresOrderStore:
                     "created_at", "expires_at"]
             return dict(zip(cols, row))
 
-    def list_paid_orders(self, limit=100):
-        """읽기 전용: PAID 주문만 결제일 최신순으로 최대 limit건. 파라미터 바인딩."""
+    def list_paid_orders(self, limit=100, dispatch=None):
+        """읽기 전용: PAID 주문. dispatch 로 WHERE 를 먼저 적용하고(대기/완료), '발송 대기 먼저,
+        결제일 오래된 순'으로 정렬한 뒤 LIMIT 을 건다(필터·정렬이 LIMIT 보다 먼저 적용되므로
+        대기 주문이 누락되지 않는다). dispatch 분기는 코드 상수만 쓰고 값은 파라미터 바인딩한다."""
+        where = "status = %s"
+        if dispatch == "waiting":
+            where += " AND report_sent_at IS NULL"
+        elif dispatch == "done":
+            where += " AND report_sent_at IS NOT NULL"
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT order_id, product_code, amount, currency, status, payment_key,"
                 " created_at, updated_at, paid_at, private_data_expires_at, report_sent_at"
-                " FROM orders WHERE status = %s ORDER BY paid_at DESC LIMIT %s",
+                " FROM orders WHERE " + where +
+                " ORDER BY (report_sent_at IS NOT NULL), paid_at ASC LIMIT %s",
                 ("PAID", int(limit)))
             rows = cur.fetchall()
             cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",

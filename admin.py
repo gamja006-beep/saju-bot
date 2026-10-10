@@ -609,15 +609,18 @@ def _build_copy_package(order, payload):
 @require_admin
 def admin_orders():
     store = _get_store()
+    # 발송 상태 필터는 서버에서 적용한다(100건 먼저 가져와 화면에서 거르면 대기 주문이 누락될 수 있음).
+    sel = request.args.get("status") or "all"
+    if sel not in ("all", "waiting", "done"):
+        sel = "all"
+    dispatch = None if sel == "all" else sel
     try:
-        orders = store.list_paid_orders(limit=_MAX_LIST)
+        # 저장소가 '발송 대기 먼저, 그룹 내 결제일 오래된 순'으로 정렬·필터 후 limit 을 적용한다.
+        orders = store.list_paid_orders(limit=_MAX_LIST, dispatch=dispatch)
     except Exception:
         abort(500)  # 내부 정보 비노출
-    # 오래된 결제순(먼저 결제한 주문을 먼저 처리). paid_at 없으면 뒤로.
-    _far = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
-    orders = sorted(orders, key=lambda r: r.get("paid_at") or _far)
     rows = []
-    for o in orders[:_MAX_LIST]:
+    for o in orders:
         if o.get("status") != "PAID":  # 방어적 재확인
             continue
         rows.append({
@@ -633,7 +636,14 @@ def admin_orders():
     # 외 상품에는 임의 기한을 만들지 않는다.
     guide_etas = [{"name": _product_name(c), "eta": _dispatch_eta_guidance(c)}
                   for c in payments.LAUNCH_PRODUCTS]
+    filters = [{"key": "all", "label": "전체", "active": sel == "all"},
+               {"key": "waiting", "label": "발송 대기", "active": sel == "waiting"},
+               {"key": "done", "label": "발송 완료", "active": sel == "done"}]
+    empty_msg = {"all": "결제 완료된 주문이 없습니다.",
+                 "waiting": "발송 대기 중인 주문이 없습니다.",
+                 "done": "발송 완료된 주문이 없습니다."}[sel]
     return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows),
+                                         filters=filters, selected=sel, empty_msg=empty_msg,
                                          guide_etas=guide_etas))
 
 

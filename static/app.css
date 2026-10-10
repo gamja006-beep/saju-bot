@@ -205,6 +205,12 @@ table.pillars .ko { font-size: 12px; color: #555; }
   margin-top: 10px; color: #1a5fb4; font-weight: 700; }
 .order-cta .chevron { font-size: 18px; line-height: 1; }
 .eta-line { margin-top: 10px; }
+/* 발송 상태 필터 바(서버 적용) */
+.filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.filter-chip { text-decoration: none; display: inline-flex; align-items: center; min-height: 40px;
+  padding: 8px 16px; border-radius: 999px; border: 1px solid #c7d2fe; background: #eef2ff;
+  color: #1e3a8a; font-weight: 700; font-size: 14px; }
+.filter-chip.active { background: #1a5fb4; color: #fff; border-color: #1a5fb4; }
 /* 보고서 처리 흐름: 넓은 화면은 가로 중앙 정렬, 좁은 화면은 세로 스텝(↓)으로 이어 가로 스크롤 방지 */
 .report-flow .flow { justify-content: center; }
 .flow-step { min-height: 44px; padding: 10px 14px; font-size: 15px; }

@@ -21,6 +21,12 @@
       <p class="sub eta-line">전달 기한: {% for g in guide_etas %}{{ g.name }} {{ g.eta }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
     </section>
 
+    <nav class="filter-bar" aria-label="발송 상태 필터">
+      {% for f in filters %}
+      <a class="filter-chip{% if f.active %} active{% endif %}" href="/admin/orders?status={{ f.key }}"{% if f.active %} aria-current="page"{% endif %}>{{ f.label }}</a>
+      {% endfor %}
+    </nav>
+
     {% for o in orders %}
     <a class="card order-card" href="/admin/orders/{{ o.order_id }}">
       <div class="order-head">
@@ -39,7 +45,7 @@
       <div class="order-cta"><span>상세 보기</span><span class="chevron" aria-hidden="true">→</span></div>
     </a>
     {% else %}
-    <p class="card disclaimer">결제 완료된 주문이 없습니다.</p>
+    <p class="card disclaimer">{{ empty_msg }}</p>
     {% endfor %}
   </main>
 </body>
