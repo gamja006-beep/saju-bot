@@ -180,6 +180,15 @@ class FreePayloadWarningsTest(unittest.TestCase):
         body.update(over)
         return self.c.post("/free-insights", json=body)
 
+    def test_jieqi_boundary_note_near_ipchun(self):
+        # 2012-02-04 19:23 서울 = 입춘(18:22:24 CST) 직후 → 절입 경계 경고가 무료 결과 notes 에 표시.
+        j = self._post(birth_date="2012-02-04", birth_time="19:23").get_json()
+        self.assertTrue(any("절입" in n for n in j["insight"]["notes"]))
+
+    def test_no_jieqi_note_away_from_boundary(self):
+        j = self._post(birth_date="2012-02-04", birth_time="12:00").get_json()
+        self.assertFalse(any("절입" in n for n in j["insight"]["notes"]))
+
     def test_accuracy_note_present_and_not_claiming_verified(self):
         r = self._post()
         self.assertEqual(r.status_code, 200)

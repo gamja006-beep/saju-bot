@@ -370,9 +370,10 @@ def _build_report_package(order, payload):
         else:
             applied_time = "미상 (출생시간 미입력)"
         A("- 적용 시간: " + applied_time)
-        tz = conv.get("timezone")
-        A("- 시간대: " + ("대한민국 표준시(Asia/Seoul)" if tz == "Asia/Seoul"
-                       else "한국 표준시 벽시계(KST, 보정 없음)"))
+        tz = conv.get("day_time_timezone")
+        A("- 일·시주 시간대: " + ("대한민국 표준시(Asia/Seoul)" if tz == "Asia/Seoul"
+                             else "한국 표준시 벽시계(KST, 보정 없음)"))
+        A("- 연·월주 절기 판정: 출생 순간을 Asia/Seoul→UTC+8(절기 기준)로 변환")
         A("- 진태양시 보정: " + ("적용" if conv.get("longitude_correction") else "미적용"))
         A("- 과거 표준시/DST 적용: " + (
             "적용" if (conv.get("historical_std_time") or conv.get("dst")) else "미적용"))

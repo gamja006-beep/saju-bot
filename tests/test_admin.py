@@ -60,6 +60,15 @@ class AdminViewerTest(unittest.TestCase):
         o = payments.create_order(self.store, "BASIC", email, {"question": "대기중"})
         return o["orderId"]
 
+    def test_copy_package_includes_jieqi_boundary_note(self):
+        # 절입 경계 근접 출생(2012-02-04 19:23) 주문 → 관리자 생성자료에 절입 경고 포함.
+        oid = self._make_paid(payload={"consultation_type": "종합", "birth_date": "2012-02-04",
+                                       "birth_time": "19:23", "gender": "남",
+                                       "question": "?", "topics": ["직업"]})
+        body = self.c.get("/admin/orders/%s" % oid,
+                          headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("절입", body)
+
     # ---- 인증 ----
     def test_no_auth_401(self):
         r = self.c.get("/admin/orders")

@@ -107,6 +107,8 @@ def build_report_data(data):
         warnings.append("출생 시간 미상: 시주를 산출하지 않았습니다.")
     if saju.get("boundary_warning"):
         warnings.append("23시대 출생: 자시 규칙에 따라 일주/시주 해석이 달라질 수 있습니다.")
+    if saju.get("jieqi_boundary"):
+        warnings.append("절입(절기) 경계 근접: 연주/월주 해석이 달라질 수 있습니다.")
 
     report = {
         "schema": "saju_report_request_v1",
@@ -126,6 +128,7 @@ def build_report_data(data):
             "sect": saju["sect"],
             "time_correction": saju["time_correction"],
             "boundary_warning": saju["boundary_warning"],
+            "jieqi_boundary": saju.get("jieqi_boundary"),
         },
         "verification_status": "PARTIAL / NOT_VERIFIED",
         "warnings": warnings,

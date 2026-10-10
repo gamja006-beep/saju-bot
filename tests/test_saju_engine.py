@@ -529,6 +529,16 @@ class CustomerUITest(unittest.TestCase):
         self.assertEqual(rep["customer_data"]["consultation_type"], "종합")
         self.assertEqual(rep["selected_product"], "expert_99000")
 
+    def test_report_data_jieqi_boundary_warning(self):
+        rep = self._report(birth_date="2012-02-04", birth_time="19:23").get_json()["report"]
+        self.assertTrue(any("절입" in w for w in rep["warnings"]))
+        self.assertIsNotNone(rep["saju"]["jieqi_boundary"])
+
+    def test_report_data_no_jieqi_away_from_boundary(self):
+        rep = self._report(birth_date="1990-05-15", birth_time="08:30").get_json()["report"]
+        self.assertFalse(any("절입" in w for w in rep["warnings"]))
+        self.assertIsNone(rep["saju"]["jieqi_boundary"])
+
     def test_report_excludes_pii(self):
         r = self._report(email="x@y.com", phone="010-1234-5678",
                          payment="4111111111111111", address="서울시 강남구 ...")

@@ -256,6 +256,8 @@ def _time_notes(saju):
         notes.append("출생지(경도)를 입력하지 않아 진태양시 보정이 적용되지 않았습니다. 경계 시간대에서는 결과가 달라질 수 있습니다.")
     if saju.get("boundary_warning"):
         notes.append("밤 11시대(23:00~23:59) 출생은 자시(子時) 기준에 따라 일부 해석이 달라질 수 있습니다.")
+    if saju.get("jieqi_boundary"):
+        notes.append("절기(월·연이 바뀌는 절입) 경계에 가까운 출생이라 연주·월주가 달라질 수 있어 참고로만 봐 주세요.")
     notes.append("출생시간과 해석 방식에 따라 일부 결과가 달라질 수 있는 참고자료입니다.")
     return notes
 
