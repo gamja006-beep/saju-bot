@@ -1,7 +1,7 @@
 <!-- 공통 흐름(목록·상세에서 동일 사용). 고객 이메일·주문번호를 설명에 넣지 않는다.
-     각 단계는 마우스 hover·키보드 focus·모바일 tap 으로 설명을 열고 닫는다. -->
+     각 단계는 마우스 hover·키보드 focus·모바일 tap 으로 선택되어 아래 설명 카드에 해당 설명만 표시한다. -->
 <div class="report-flow">
-  <div class="flow" aria-label="결제 후 보고서 처리 흐름">
+  <div class="flow" role="group" aria-label="결제 후 보고서 처리 흐름">
     <button type="button" class="flow-step" aria-expanded="false"
       data-desc="결제 완료 주문을 확인합니다.">1. 결제 확인</button>
     <span class="flow-arrow" aria-hidden="true">→</span>
@@ -20,10 +20,13 @@
     <button type="button" class="flow-step" aria-expanded="false"
       data-desc="실제 고객 이메일 발송을 확인한 뒤에만 '발송 완료로 기록'을 누릅니다. 이 버튼은 상태만 저장하며 이메일을 보내지 않습니다.">6. 발송 기록</button>
   </div>
-  <p class="flow-desc sub" id="flow-desc" aria-live="polite">단계를 마우스로 가리키거나, 키보드로 선택하거나, 휴대폰에서 탭하면 설명이 표시됩니다.</p>
-  <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
-  <p class="sub">'발송 완료로 기록'은 상태만 저장하며 이메일을 보내지 않습니다.</p>
-  <p class="sub">실제 고객 이메일 발송을 확인한 뒤에만 '발송 완료로 기록'을 누르세요.</p>
+  <div class="flow-desc-card" id="flow-desc" aria-live="polite">단계를 선택하면 설명이 여기에 표시됩니다. (마우스로 가리키기·키보드 선택·모바일 탭)</div>
+  <details class="notice-box">
+    <summary>운영 주의사항</summary>
+    <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
+    <p class="sub">'발송 완료로 기록'은 상태만 저장하며 이메일을 보내지 않습니다.</p>
+    <p class="sub">실제 고객 이메일 발송을 확인한 뒤에만 '발송 완료로 기록'을 누르세요.</p>
+  </details>
 </div>
 <script>
 (function () {

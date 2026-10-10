@@ -175,3 +175,52 @@ table.pillars .ko { font-size: 12px; color: #555; }
   .fr-title { font-size: 18px; }
   .fr-btn { flex: 1 1 100%; }
 }
+
+/* ===== 관리자 화면 재디자인 (분리된 카드 · 명확한 선택 상태 · 넉넉한 간격 · 오른쪽 이동 표시) ===== */
+.admin-wide { max-width: 720px; }
+.card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 16px;
+  margin: 0 0 14px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); }
+.card .admin-h2 { margin-top: 0; }
+/* 발송 상태 배지 */
+.status-pill { display: inline-block; font-size: 13px; font-weight: 700; padding: 4px 12px;
+  border-radius: 999px; line-height: 1.4; }
+.status-wait { background: #fff4e5; color: #92400e; border: 1px solid #fed7aa; }
+.status-done { background: #e7f6ec; color: #166534; border: 1px solid #bbf7d0; }
+.status-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.status-row .status-label-k { color: #6b7280; font-size: 14px; }
+/* 공통 정보 행(상세·카드) */
+.orow { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f2f4f7; }
+.orow:last-child { border-bottom: none; }
+.orow .ok { flex: 0 0 34%; color: #6b7280; font-size: 14px; }
+.orow .ov { flex: 1; font-weight: 600; font-size: 15px; word-break: break-word; }
+/* 주문 카드(목록): 상품명+상태 우선, 주문번호·금액은 시각적 우선순위 낮춤 */
+.order-card { display: block; text-decoration: none; color: inherit; }
+.order-card:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(16, 24, 40, .08); }
+.order-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.order-product { font-size: 17px; font-weight: 800; }
+.order-meta-min { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px;
+  color: #98a2b3; font-size: 12px; }
+.order-meta-min .order-no { word-break: break-all; }
+.order-cta { display: flex; align-items: center; justify-content: flex-end; gap: 6px;
+  margin-top: 10px; color: #1a5fb4; font-weight: 700; }
+.order-cta .chevron { font-size: 18px; line-height: 1; }
+.eta-line { margin-top: 10px; }
+/* 보고서 처리 흐름: 넓은 화면은 가로 중앙 정렬, 좁은 화면은 세로 스텝(↓)으로 이어 가로 스크롤 방지 */
+.report-flow .flow { justify-content: center; }
+.flow-step { min-height: 44px; padding: 10px 14px; font-size: 15px; }
+.flow-desc-card { margin-top: 10px; padding: 12px 14px; background: #f3f6ff;
+  border: 1px solid #c7d2fe; border-radius: 10px; min-height: 1.4em; color: #1e3a8a; }
+.notice-box { margin-top: 10px; border: 1px solid #e3e6ea; border-radius: 10px; background: #fafafa; }
+.notice-box > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: #374151;
+  min-height: 44px; display: flex; align-items: center; list-style: none; }
+.notice-box > summary::-webkit-details-marker { display: none; }
+.notice-box > summary::before { content: "▸"; margin-right: 8px; color: #9aa0a6; }
+.notice-box[open] > summary::before { content: "▾"; }
+.notice-box[open] > summary { border-bottom: 1px solid #eef0f4; }
+.notice-box .sub { margin: 8px 14px; }
+.warn-strong { color: #92400e; font-weight: 600; }
+@media (max-width: 520px) {
+  .report-flow .flow { flex-direction: column; align-items: stretch; }
+  .flow-step { width: 100%; justify-content: center; text-align: center; }
+  .flow-arrow { transform: rotate(90deg); align-self: center; color: #9aa0a6; }
+}

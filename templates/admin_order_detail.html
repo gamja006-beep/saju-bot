@@ -8,114 +8,127 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <main class="app">
+  <main class="app admin-wide">
     <header class="top">
       <h1>주문 상세</h1>
       <p class="sub">읽기 전용</p>
     </header>
 
-    <!-- 1. 발송 상태 + 지금 할 일 (맨 위, 모바일 우선) -->
-    <h2 class="admin-h2">보고서 발송 관리 — 지금 할 일</h2>
-    <div class="summary" id="admin-dispatch">
-      <div class="srow"><span class="sk">발송 상태</span><span class="sv dispatch-status">{{ o.dispatch.status_label }}</span></div>
-      <div class="srow"><span class="sk">발송 기한</span><span class="sv">{{ o.dispatch.eta_guidance }}</span></div>
+    <!-- 1. 현재 발송 상태 + 6단계 흐름 + 상태별 작업 -->
+    <section class="card" id="admin-dispatch">
+      <h2 class="admin-h2">보고서 발송 관리 — 지금 할 일</h2>
+      <div class="status-row">
+        <span class="status-label-k">발송 상태</span>
+        <span class="status-pill status-{{ 'done' if o.dispatch.sent else 'wait' }} dispatch-status">{{ o.dispatch.status_label }}</span>
+      </div>
+      <div class="orow"><span class="ok">발송 기한</span><span class="ov">{{ o.dispatch.eta_guidance }}</span></div>
       {% if o.dispatch.sent %}
-      <div class="srow"><span class="sk">발송 완료 시각</span><span class="sv">{{ o.dispatch.sent_at }}</span></div>
+      <div class="orow"><span class="ok">발송 완료 시각</span><span class="ov">{{ o.dispatch.sent_at }}</span></div>
       {% endif %}
-    </div>
-    {% include "_report_flow.html" %}
-    <p class="sub">기록·정정 버튼은 상태만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
-    {% if not o.dispatch.sent %}
-    <p class="sub">받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.</p>
-    <div class="admin-actions">
-      <!-- POST 전용·CSRF 토큰·중복 클릭 방어(서버 멱등 + 버튼 비활성). GET 은 405. -->
-      <form method="post" action="/admin/orders/{{ o.order_id }}/report/mark-sent" id="mark-sent-form">
-        <input type="hidden" name="csrf_token" value="{{ o.report_csrf }}">
-        <button type="submit" id="mark-sent-btn" class="btn primary admin-copy">발송 완료로 기록</button>
-      </form>
-    </div>
-    {% else %}
-    <p class="sub">잘못 기록된 경우 아래에서 '발송 대기'로 정정할 수 있습니다. 정정은 완료 기록(시각)만 되돌리며, 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않습니다.</p>
-    <div class="admin-actions">
-      <!-- POST 전용·CSRF 토큰·중복 요청 안전(서버 멱등 + 버튼 비활성). GET 은 405. -->
-      <form method="post" action="/admin/orders/{{ o.order_id }}/report/unmark-sent" id="unmark-sent-form">
-        <input type="hidden" name="csrf_token" value="{{ o.report_unmark_csrf }}">
-        <button type="submit" id="unmark-sent-btn" class="btn admin-copy">발송 완료 기록 정정</button>
-      </form>
-    </div>
-    {% endif %}
-    {% if o.dispatch_result %}
-    <p class="sub" id="dispatch-result" aria-live="polite">{{ o.dispatch_result }}</p>
-    {% endif %}
+
+      {% include "_report_flow.html" %}
+
+      <p class="sub">기록·정정 버튼은 상태만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
+      {% if not o.dispatch.sent %}
+      <p class="sub warn-strong">실제 고객에게 이메일을 보낸 뒤에만 '발송 완료로 기록'을 누르세요. (받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.)</p>
+      <div class="admin-actions">
+        <!-- POST 전용·CSRF 토큰·중복 클릭 방어(서버 멱등 + 버튼 비활성). GET 은 405. -->
+        <form method="post" action="/admin/orders/{{ o.order_id }}/report/mark-sent" id="mark-sent-form">
+          <input type="hidden" name="csrf_token" value="{{ o.report_csrf }}">
+          <button type="submit" id="mark-sent-btn" class="btn primary admin-copy">발송 완료로 기록</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="sub">잘못 기록된 경우 아래에서 '발송 대기'로 정정할 수 있습니다. 정정은 완료 기록(시각)만 되돌리며, 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않습니다.</p>
+      <div class="admin-actions">
+        <!-- POST 전용·CSRF 토큰·중복 요청 안전(서버 멱등 + 버튼 비활성). GET 은 405. -->
+        <form method="post" action="/admin/orders/{{ o.order_id }}/report/unmark-sent" id="unmark-sent-form">
+          <input type="hidden" name="csrf_token" value="{{ o.report_unmark_csrf }}">
+          <button type="submit" id="unmark-sent-btn" class="btn admin-copy">발송 완료 기록 정정</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if o.dispatch_result %}
+      <p class="sub" id="dispatch-result" aria-live="polite">{{ o.dispatch_result }}</p>
+      {% endif %}
+    </section>
 
     <!-- 2. 받는 사람 이메일 + 복사(주소만). 메일 작성/발송은 하지 않는다. -->
-    <h2 class="admin-h2">받는 사람 이메일</h2>
-    <div class="summary" id="admin-recipient">
-      <div class="srow"><span class="sk">받는 사람(수령 이메일)</span><span class="sv" id="recipient-email">{{ o.email }}</span></div>
-    </div>
-    <div class="admin-actions">
-      <button type="button" id="copy-email" class="btn">고객 이메일 복사</button>
-      <span id="copy-email-status" class="copy-status" aria-live="polite"></span>
-    </div>
+    <section class="card">
+      <h2 class="admin-h2">받는 사람 이메일</h2>
+      <div id="admin-recipient">
+        <div class="orow"><span class="ok">받는 사람(수령 이메일)</span><span class="ov" id="recipient-email">{{ o.email }}</span></div>
+      </div>
+      <div class="admin-actions">
+        <button type="button" id="copy-email" class="btn">고객 이메일 복사</button>
+        <span id="copy-email-status" class="copy-status" aria-live="polite"></span>
+      </div>
+    </section>
 
     <!-- 3. 최종 보고서 생성자료 복사 -->
     {% if o.report_text %}
-    <h2 class="admin-h2">최종 보고서 생성자료</h2>
-    <p class="sub">복사 후 명리학 전문 챗봇에 한 번만 붙여넣으면 선택 상품에 맞는 최종 보고서와 PDF를 생성합니다.</p>
-    <p class="sub">출생정보가 포함됩니다. 보고서 작성 목적으로만 사용하고 발송 후 안전하게 폐기하세요.</p>
-    <div class="admin-actions">
-      <button type="button" id="copy-report" class="btn primary admin-copy">최종 보고서 생성자료 복사</button>
-      <span id="copy-status" class="copy-status" aria-live="polite"></span>
-    </div>
-    <!-- 복사 대상: 서버에서 생성한 한국어 평문만. 이메일/주문번호/금액/결제키/암호문/경도/내부 JSON 은 포함하지 않는다. -->
-    <pre id="report-package" hidden>{{ o.report_text }}</pre>
-    {% endif %}
-
-    <!-- 4. 주문 정보(참고) -->
-    <h2 class="admin-h2">주문 정보</h2>
-    <div class="summary">
-      <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
-      <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
-      <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
-      <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
-    </div>
-
-    <h2 class="admin-h2">상담 내용</h2>
-    <div class="summary" id="admin-consultation">
-      {% for row in o.consultation %}
-      <div class="srow"><span class="sk">{{ row.label }}</span><span class="sv">{{ row.value }}</span></div>
-      {% else %}
-      <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
-      {% endfor %}
-    </div>
-
-    <h2 class="admin-h2">운영자 알림 상태</h2>
-    <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
-    <div class="summary" id="admin-notifications">
-      <div class="srow">
-        <span class="sk">알림 설정</span>
-        <span class="sv">{% if o.notify.ready %}활성{% else %}비활성 또는 미완료{% endif %}</span>
+    <section class="card">
+      <h2 class="admin-h2">최종 보고서 생성자료</h2>
+      <p class="sub">복사 후 명리학 전문 챗봇에 한 번만 붙여넣으면 선택 상품에 맞는 최종 보고서와 PDF를 생성합니다.</p>
+      <p class="sub">출생정보가 포함됩니다. 보고서 작성 목적으로만 사용하고 발송 후 안전하게 폐기하세요.</p>
+      <div class="admin-actions">
+        <button type="button" id="copy-report" class="btn primary admin-copy">최종 보고서 생성자료 복사</button>
+        <span id="copy-status" class="copy-status" aria-live="polite"></span>
       </div>
-      {% for n in o.notifications %}
-      <div class="srow">
-        <span class="sk">{{ n.channel_label }}</span>
-        <span class="sv">{{ n.status_label }} · 시도 {{ n.attempts }}회{% if n.error_type %} · {{ n.error_type }}{% endif %}</span>
+      <!-- 복사 대상: 서버에서 생성한 한국어 평문만. 이메일/주문번호/금액/결제키/암호문/경도/내부 JSON 은 포함하지 않는다. -->
+      <pre id="report-package" hidden>{{ o.report_text }}</pre>
+    </section>
+    {% endif %}
+
+    <!-- 4. 기타 주문정보 -->
+    <section class="card">
+      <h2 class="admin-h2">주문 정보</h2>
+      <div class="orow"><span class="ok">주문번호</span><span class="ov">{{ o.order_id }}</span></div>
+      <div class="orow"><span class="ok">상품</span><span class="ov">{{ o.product_name }}</span></div>
+      <div class="orow"><span class="ok">금액</span><span class="ov">{{ "{:,}".format(o.amount) }}원</span></div>
+      <div class="orow"><span class="ok">결제일</span><span class="ov">{{ o.paid_at }}</span></div>
+    </section>
+
+    <section class="card">
+      <h2 class="admin-h2">상담 내용</h2>
+      <div id="admin-consultation">
+        {% for row in o.consultation %}
+        <div class="orow"><span class="ok">{{ row.label }}</span><span class="ov">{{ row.value }}</span></div>
+        {% else %}
+        <div class="orow"><span class="ov">상담 내용이 없습니다.</span></div>
+        {% endfor %}
       </div>
-      {% else %}
-      <div class="srow"><span class="sv">대기 중인 알림 작업이 없습니다.</span></div>
-      {% endfor %}
-    </div>
-    {% if o.notify.ready %}
-    <div class="admin-actions">
-      <!-- POST 전용: 해당 주문의 실패·대기 알림만 재전송(불명확 상태 제외). GET 은 405. -->
-      <form method="post" action="/admin/orders/{{ o.order_id }}/notifications/retry">
-        <button type="submit" class="btn primary">실패 알림 재전송</button>
-      </form>
-    </div>
-    {% endif %}
-    {% if o.retry_result %}
-    <p class="sub" id="retry-result" aria-live="polite">{{ o.retry_result }}</p>
-    {% endif %}
+    </section>
+
+    <section class="card">
+      <h2 class="admin-h2">운영자 알림 상태</h2>
+      <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
+      <div id="admin-notifications">
+        <div class="orow">
+          <span class="ok">알림 설정</span>
+          <span class="ov">{% if o.notify.ready %}활성{% else %}비활성 또는 미완료{% endif %}</span>
+        </div>
+        {% for n in o.notifications %}
+        <div class="orow">
+          <span class="ok">{{ n.channel_label }}</span>
+          <span class="ov">{{ n.status_label }} · 시도 {{ n.attempts }}회{% if n.error_type %} · {{ n.error_type }}{% endif %}</span>
+        </div>
+        {% else %}
+        <div class="orow"><span class="ov">대기 중인 알림 작업이 없습니다.</span></div>
+        {% endfor %}
+      </div>
+      {% if o.notify.ready %}
+      <div class="admin-actions">
+        <!-- POST 전용: 해당 주문의 실패·대기 알림만 재전송(불명확 상태 제외). GET 은 405. -->
+        <form method="post" action="/admin/orders/{{ o.order_id }}/notifications/retry">
+          <button type="submit" class="btn primary">실패 알림 재전송</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if o.retry_result %}
+      <p class="sub" id="retry-result" aria-live="polite">{{ o.retry_result }}</p>
+      {% endif %}
+    </section>
 
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
   </main>

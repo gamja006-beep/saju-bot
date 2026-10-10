@@ -8,36 +8,39 @@
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <main class="app">
+  <main class="app admin-wide">
     <header class="top">
       <h1>결제 완료 주문</h1>
       <p class="sub">읽기 전용 · 총 {{ count }}건 (최대 100건)</p>
     </header>
 
     <!-- 관리자 전용 안내(고객 화면 아님). 고객정보·주문번호·키를 넣지 않는다. -->
-    <section class="admin-guide" id="admin-guide">
+    <section class="card" id="admin-guide">
       <h2 class="admin-h2">결제 후 보고서 처리 순서</h2>
       {% include "_report_flow.html" %}
-      <p class="sub">전달 기한: {% for g in guide_etas %}{{ g.name }} {{ g.eta }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+      <p class="sub eta-line">전달 기한: {% for g in guide_etas %}{{ g.name }} {{ g.eta }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
     </section>
-    {% if orders %}
+
     {% for o in orders %}
-    <a class="admin-card" href="/admin/orders/{{ o.order_id }}">
-      <div class="summary">
-        <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
-        <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
-        <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
-        <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
-        <div class="srow"><span class="sk">발송 기한</span><span class="sv">{{ o.dispatch.eta_guidance }}</span></div>
-        <div class="srow"><span class="sk">발송 상태</span><span class="sv">{{ o.dispatch.status_label }}{% if o.dispatch.sent %} · {{ o.dispatch.sent_at }}{% endif %}</span></div>
-        <div class="srow"><span class="sk">이메일</span><span class="sv">{{ o.email_masked }}</span></div>
-        <div class="srow"><span class="sk">상세</span><span class="sv admin-more">상세 보기 →</span></div>
+    <a class="card order-card" href="/admin/orders/{{ o.order_id }}">
+      <div class="order-head">
+        <span class="order-product">{{ o.product_name }}</span>
+        <span class="status-pill status-{{ 'done' if o.dispatch.sent else 'wait' }}">{{ o.dispatch.status_label }}</span>
       </div>
+      <div class="order-rows">
+        <div class="orow"><span class="ok">발송 기한</span><span class="ov">{{ o.dispatch.eta_guidance }}</span></div>
+        <div class="orow"><span class="ok">이메일</span><span class="ov">{{ o.email_masked }}</span></div>
+        <div class="orow"><span class="ok">결제일</span><span class="ov">{{ o.paid_at }}</span></div>
+      </div>
+      <div class="order-meta-min">
+        <span class="order-no">{{ o.order_id }}</span>
+        <span class="order-amt">{{ "{:,}".format(o.amount) }}원</span>
+      </div>
+      <div class="order-cta"><span>상세 보기</span><span class="chevron" aria-hidden="true">→</span></div>
     </a>
-    {% endfor %}
     {% else %}
-    <p class="disclaimer">결제 완료된 주문이 없습니다.</p>
-    {% endif %}
+    <p class="card disclaimer">결제 완료된 주문이 없습니다.</p>
+    {% endfor %}
   </main>
 </body>
 </html>
