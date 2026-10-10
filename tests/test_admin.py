@@ -276,13 +276,13 @@ class AdminViewerTest(unittest.TestCase):
                     _ADMIN_PW, _FERNET_KEY, "samplesecret", "DATABASE_URL"]:
             self.assertNotIn(bad, body)
 
-    def test_copy_button_visible_below_consultation(self):
+    def test_copy_button_prominent_above_consultation(self):
         oid = self._make_paid()  # 상담 내용 존재
         body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
         self.assertIn('id="copy-report"', body)
         self.assertIn("admin-copy", body)  # 전폭·고대비 버튼
-        # 위치: 상담 카드(#admin-consultation) 아래, 목록 링크 위
-        self.assertLess(body.index('id="admin-consultation"'), body.index('id="copy-report"'))
+        # 모바일 우선 재배치: 보고서 생성자료 복사를 상담 내용(#admin-consultation)보다 '위'로 올림.
+        self.assertLess(body.index('id="copy-report"'), body.index('id="admin-consultation"'))
         self.assertLess(body.index('id="copy-report"'), body.index("admin-back"))
 
     def test_copy_button_shown_even_minimal_payload(self):

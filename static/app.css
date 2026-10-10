@@ -152,6 +152,13 @@ table.pillars .ko { font-size: 12px; color: #555; }
 .guide-steps { margin: 8px 0; padding-left: 1.4em; }
 .guide-steps li { margin: 6px 0; line-height: 1.5; }
 .admin-guide .sub { margin: 6px 0 0; }
+/* 주문 상세: 발송 상태·받는 사람 이메일·복사 버튼을 눈에 띄게(모바일 우선) */
+.dispatch-status { font-weight: 700; }
+#admin-recipient { margin-top: 0; }
+#recipient-email { font-weight: 700; word-break: break-all; }
+#copy-email { display: block; width: 100%; min-height: 48px; margin-top: 4px; }
+/* 목록: '상세 보기' 링크 대비 강화 */
+.admin-more { font-weight: 700; color: #1a5fb4; }
 
 @media (max-width: 360px) {
   body { font-size: 16px; }

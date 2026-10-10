@@ -478,6 +478,19 @@ class RecipientEmailCopyTest(_Base):
         self.assertIn('id="copy-email" class="btn"', body)
         self.assertIn('type="button" id="copy-email"', body)  # 폼 전송/발송 아님
 
+    def test_detail_mobile_first_section_order(self):
+        # 재배치: 발송 상태·지금 할 일 → 받는 사람 이메일+복사 → 보고서 자료 복사
+        #        → 주문 정보 → 운영자 알림 상태(아래로 구분).
+        oid = self._paid_with_email("alice@example.test", "pk_a")
+        b = self._detail(oid)
+        order = [b.index("지금 할 일"),
+                 b.index("받는 사람 이메일"),
+                 b.index('id="copy-email"'),
+                 b.index('id="copy-report"'),
+                 b.index("주문 정보"),
+                 b.index("운영자 알림 상태")]
+        self.assertEqual(order, sorted(order))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -13,22 +13,59 @@
       <h1>주문 상세</h1>
       <p class="sub">읽기 전용</p>
     </header>
-    <div class="summary">
-      <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
-      <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
-      <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
-      <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
-      <div class="srow"><span class="sk">수령 이메일</span><span class="sv">{{ o.email }}</span></div>
+
+    <!-- 1. 발송 상태 + 지금 할 일 (맨 위, 모바일 우선) -->
+    <h2 class="admin-h2">보고서 발송 관리 — 지금 할 일</h2>
+    <div class="summary" id="admin-dispatch">
+      <div class="srow"><span class="sk">발송 상태</span><span class="sv dispatch-status">{{ o.dispatch.status_label }}</span></div>
+      <div class="srow"><span class="sk">발송 기한</span><span class="sv">{{ o.dispatch.eta_guidance }}</span></div>
+      {% if o.dispatch.sent %}
+      <div class="srow"><span class="sk">발송 완료 시각</span><span class="sv">{{ o.dispatch.sent_at }}</span></div>
+      {% endif %}
+    </div>
+    <ol class="guide-steps">
+      <li>결제 완료 주문 확인</li>
+      <li>아래 '최종 보고서 생성자료 복사'</li>
+      <li>명리학 챗봇에서 보고서·PDF 생성</li>
+      <li>담당자가 내용과 받는 사람 이메일 확인</li>
+      <li>고객에게 이메일로 직접 발송</li>
+      <li>실제 발송 후 '발송 완료로 기록'</li>
+    </ol>
+    <p class="sub">기록·정정 버튼은 상태만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
+    {% if not o.dispatch.sent %}
+    <p class="sub">받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.</p>
+    <div class="admin-actions">
+      <!-- POST 전용·CSRF 토큰·중복 클릭 방어(서버 멱등 + 버튼 비활성). GET 은 405. -->
+      <form method="post" action="/admin/orders/{{ o.order_id }}/report/mark-sent" id="mark-sent-form">
+        <input type="hidden" name="csrf_token" value="{{ o.report_csrf }}">
+        <button type="submit" id="mark-sent-btn" class="btn primary admin-copy">발송 완료로 기록</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="sub">잘못 기록된 경우 아래에서 '발송 대기'로 정정할 수 있습니다. 정정은 완료 기록(시각)만 되돌리며, 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않습니다.</p>
+    <div class="admin-actions">
+      <!-- POST 전용·CSRF 토큰·중복 요청 안전(서버 멱등 + 버튼 비활성). GET 은 405. -->
+      <form method="post" action="/admin/orders/{{ o.order_id }}/report/unmark-sent" id="unmark-sent-form">
+        <input type="hidden" name="csrf_token" value="{{ o.report_unmark_csrf }}">
+        <button type="submit" id="unmark-sent-btn" class="btn admin-copy">발송 완료 기록 정정</button>
+      </form>
+    </div>
+    {% endif %}
+    {% if o.dispatch_result %}
+    <p class="sub" id="dispatch-result" aria-live="polite">{{ o.dispatch_result }}</p>
+    {% endif %}
+
+    <!-- 2. 받는 사람 이메일 + 복사(주소만). 메일 작성/발송은 하지 않는다. -->
+    <h2 class="admin-h2">받는 사람 이메일</h2>
+    <div class="summary" id="admin-recipient">
+      <div class="srow"><span class="sk">받는 사람(수령 이메일)</span><span class="sv" id="recipient-email">{{ o.email }}</span></div>
+    </div>
+    <div class="admin-actions">
+      <button type="button" id="copy-email" class="btn">고객 이메일 복사</button>
+      <span id="copy-email-status" class="copy-status" aria-live="polite"></span>
     </div>
 
-    <h2 class="admin-h2">상담 내용</h2>
-    <div class="summary" id="admin-consultation">
-      {% for row in o.consultation %}
-      <div class="srow"><span class="sk">{{ row.label }}</span><span class="sv">{{ row.value }}</span></div>
-      {% else %}
-      <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
-      {% endfor %}
-    </div>
+    <!-- 3. 최종 보고서 생성자료 복사 -->
     {% if o.report_text %}
     <h2 class="admin-h2">최종 보고서 생성자료</h2>
     <p class="sub">복사 후 명리학 전문 챗봇에 한 번만 붙여넣으면 선택 상품에 맞는 최종 보고서와 PDF를 생성합니다.</p>
@@ -41,7 +78,26 @@
     <pre id="report-package" hidden>{{ o.report_text }}</pre>
     {% endif %}
 
+    <!-- 4. 주문 정보(참고) -->
+    <h2 class="admin-h2">주문 정보</h2>
+    <div class="summary">
+      <div class="srow"><span class="sk">주문번호</span><span class="sv">{{ o.order_id }}</span></div>
+      <div class="srow"><span class="sk">상품</span><span class="sv">{{ o.product_name }}</span></div>
+      <div class="srow"><span class="sk">금액</span><span class="sv">{{ "{:,}".format(o.amount) }}원</span></div>
+      <div class="srow"><span class="sk">결제일</span><span class="sv">{{ o.paid_at }}</span></div>
+    </div>
+
+    <h2 class="admin-h2">상담 내용</h2>
+    <div class="summary" id="admin-consultation">
+      {% for row in o.consultation %}
+      <div class="srow"><span class="sk">{{ row.label }}</span><span class="sv">{{ row.value }}</span></div>
+      {% else %}
+      <div class="srow"><span class="sv">상담 내용이 없습니다.</span></div>
+      {% endfor %}
+    </div>
+
     <h2 class="admin-h2">운영자 알림 상태</h2>
+    <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
     <div class="summary" id="admin-notifications">
       <div class="srow">
         <span class="sk">알림 설정</span>
@@ -66,46 +122,6 @@
     {% endif %}
     {% if o.retry_result %}
     <p class="sub" id="retry-result" aria-live="polite">{{ o.retry_result }}</p>
-    {% endif %}
-
-    <h2 class="admin-h2">보고서 발송 관리</h2>
-    <div class="summary" id="admin-dispatch">
-      <div class="srow"><span class="sk">발송 기한</span><span class="sv">{{ o.dispatch.eta_guidance }}</span></div>
-      <div class="srow"><span class="sk">발송 상태</span><span class="sv">{{ o.dispatch.status_label }}</span></div>
-      {% if o.dispatch.sent %}
-      <div class="srow"><span class="sk">발송 완료 시각</span><span class="sv">{{ o.dispatch.sent_at }}</span></div>
-      {% endif %}
-    </div>
-    <!-- '고객 이메일로 직접 발송' 단계: 받는 주소를 선명히 표시하고 주소만 복사. 메일 작성/발송은 하지 않는다. -->
-    <div class="summary" id="admin-recipient">
-      <div class="srow"><span class="sk">받는 사람(수령 이메일)</span><span class="sv" id="recipient-email">{{ o.email }}</span></div>
-    </div>
-    <div class="admin-actions">
-      <button type="button" id="copy-email" class="btn">고객 이메일 복사</button>
-      <span id="copy-email-status" class="copy-status" aria-live="polite"></span>
-    </div>
-    <p class="sub">외부 이메일에서 실제 보고서를 보낸 뒤에만 완료로 기록하세요. 이 버튼은 시각만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
-    {% if not o.dispatch.sent %}
-    <p class="sub">받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.</p>
-    <div class="admin-actions">
-      <!-- POST 전용·CSRF 토큰·중복 클릭 방어(서버 멱등 + 버튼 비활성). GET 은 405. -->
-      <form method="post" action="/admin/orders/{{ o.order_id }}/report/mark-sent" id="mark-sent-form">
-        <input type="hidden" name="csrf_token" value="{{ o.report_csrf }}">
-        <button type="submit" id="mark-sent-btn" class="btn primary">발송 완료로 기록</button>
-      </form>
-    </div>
-    {% else %}
-    <p class="sub">잘못 기록된 경우 아래에서 '발송 대기'로 정정할 수 있습니다. 정정은 완료 기록(시각)만 되돌리며, 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않습니다.</p>
-    <div class="admin-actions">
-      <!-- POST 전용·CSRF 토큰·중복 요청 안전(서버 멱등 + 버튼 비활성). GET 은 405. -->
-      <form method="post" action="/admin/orders/{{ o.order_id }}/report/unmark-sent" id="unmark-sent-form">
-        <input type="hidden" name="csrf_token" value="{{ o.report_unmark_csrf }}">
-        <button type="submit" id="unmark-sent-btn" class="btn">발송 완료 기록 정정</button>
-      </form>
-    </div>
-    {% endif %}
-    {% if o.dispatch_result %}
-    <p class="sub" id="dispatch-result" aria-live="polite">{{ o.dispatch_result }}</p>
     {% endif %}
 
     <p class="admin-back"><a href="/admin/orders">← 목록으로</a></p>
