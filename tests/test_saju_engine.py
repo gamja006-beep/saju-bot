@@ -1251,5 +1251,39 @@ class JieqiBoundaryTzTest(unittest.TestCase):
         self.assertEqual(gz[1], "辛丑")
 
 
+class GoldBaselineTest(unittest.TestCase):
+    """GOLD 회귀: 독립 한국 만세력 두 곳(사주클래스 sajuclass.com · 사공만세력 mobiwise.kr)이
+    같은 입력·계산규약에서 8자가 일치한 기준값(운영기록 G01~G06)과 엔진 출력이 일치해야 한다.
+
+    주의: 이 6건은 두 출처가 합의한 '독립' 기준값이며 엔진 자체 출력이 아니다.
+    다만 GOLD 6/20 은 전체 정확성 PASS 기준(20건)에 아직 못 미치므로
+    이 테스트 통과만으로 ACCURACY=PASS 로 올리지 않는다(운영기록 참조).
+    """
+
+    # (case, calendar, date, time, is_leap, longitude, 연, 월, 일, 시)
+    GOLD = [
+        ("G01", "solar", "2012-02-04", "19:10", False, 126.978, "辛卯", "辛丑", "乙未", "乙酉"),
+        ("G02", "solar", "1990-05-15", "14:30", False, 126.978, "庚午", "辛巳", "庚辰", "癸未"),
+        ("G03", "solar", "1994-01-17", "15:41", False, 126.705, "癸酉", "乙丑", "癸卯", "己未"),
+        ("G04", "lunar", "1987-05-10", "14:33", False, 128.5918, "丁卯", "乙巳", "丙戌", "乙未"),
+        ("G05", "solar", "1958-08-08", "09:52", False, 126.978, "戊戌", "己未", "丁巳", "甲辰"),
+        ("G06", "lunar", "2020-04-15", "10:30", True, 126.978, "庚子", "壬午", "庚辰", "辛巳"),
+    ]
+
+    def test_gold_eight_chars_match(self):
+        for name, cal, d, t, leap, lon, y, mo, da, ti in self.GOLD:
+            r = compute_saju(cal, d, t, "남", is_leap_month=leap, longitude=lon)
+            p = r["pillars"]
+            got = (p["year"]["ganzhi"], p["month"]["ganzhi"],
+                   p["day"]["ganzhi"], p["time"]["ganzhi"])
+            self.assertEqual(got, (y, mo, da, ti), name)
+
+    def test_g06_real_leap_month_solar_1987_style(self):
+        # G06: 음력 윤4월 15일(2020) → 양력 2020-06-06, 시주 포함 8자 재확인(이전 미대조 건)
+        r = compute_saju("lunar", "2020-04-15", "10:30", "남", is_leap_month=True, longitude=126.978)
+        self.assertTrue(r["lunar"]["is_leap_month"])
+        self.assertEqual((r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), (2020, 6, 6))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
