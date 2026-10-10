@@ -629,7 +629,12 @@ def admin_orders():
             "email_masked": _mask_email(_decrypt_email(store, o.get("order_id"))),
             "dispatch": _dispatch_view(o),
         })
-    return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows)))
+    # 안내용 전달기한은 코드 단일 출처(product_delivery_eta)만 사용하고, 출시 대상(BASIC·DEEP)
+    # 외 상품에는 임의 기한을 만들지 않는다.
+    guide_etas = [{"name": _product_name(c), "eta": _dispatch_eta_guidance(c)}
+                  for c in payments.LAUNCH_PRODUCTS]
+    return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows),
+                                         guide_etas=guide_etas))
 
 
 def _build_order_detail_view(store, order, order_id, retry_result=None, dispatch_result=None):

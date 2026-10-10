@@ -146,6 +146,12 @@ table.pillars .ko { font-size: 12px; color: #555; }
 .admin-actions { margin-top: 12px; }
 .admin-copy { display: block; width: 100%; min-height: 48px; }
 .admin-actions .copy-status { display: inline-block; margin: 8px 0 0; }
+/* 관리자 전용 안내(결제 후 보고서 처리 순서). 모바일에서 읽기 쉬운 번호형 목록 */
+.admin-guide { margin: 12px 0 18px; padding: 14px 16px; border: 1px solid #e5e5e5; border-radius: 10px; background: #fafafa; }
+.admin-guide .admin-h2 { margin-top: 0; }
+.guide-steps { margin: 8px 0; padding-left: 1.4em; }
+.guide-steps li { margin: 6px 0; line-height: 1.5; }
+.admin-guide .sub { margin: 6px 0 0; }
 
 @media (max-width: 360px) {
   body { font-size: 16px; }

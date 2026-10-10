@@ -370,5 +370,57 @@ class UnmarkRouteTest(_Base):
         self.assertIn("csrf_token", sent)
 
 
+# ---- 7. 관리자 목록 상단 안내(결제 후 보고서 처리 순서) ----
+class AdminGuideTest(_Base):
+    _STEPS = [
+        "결제 완료 주문 확인",
+        "주문 상세에서 '최종 보고서 생성자료 복사'",
+        "명리학 챗봇에서 보고서·PDF 생성",
+        "담당자가 내용과 고객 이메일 주소 확인",
+        "고객에게 이메일로 직접 발송",
+        "실제 발송 후 '발송 완료로 기록'",
+    ]
+
+    def _body(self):
+        r = self.c.get("/admin/orders", headers=_auth())
+        self.assertEqual(r.status_code, 200)
+        return r.get_data(as_text=True)
+
+    def test_requires_auth(self):
+        self.assertEqual(self.c.get("/admin/orders").status_code, 401)  # 관리자 전용
+
+    def test_guide_shows_all_steps_and_notes(self):
+        body = self._body()  # 주문이 없어도 안내는 항상 표시
+        self.assertIn("결제 후 보고서 처리 순서", body)
+        for step in self._STEPS:
+            self.assertIn(step, body)
+        self.assertIn("'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.", body)
+        self.assertIn("'발송 완료로 기록'은 상태만 저장하며 이메일을 보내지 않습니다.", body)
+
+    def test_guide_eta_uses_single_source_when_set(self):
+        body = self._body()  # _Base 가 PRODUCT_ETA_DAYS 3/5 설정
+        self.assertIn("기본 해석 3영업일 이내", body)
+        self.assertIn("심층 보고서 5영업일 이내", body)
+
+    def test_guide_eta_not_fabricated_when_unset(self):
+        os.environ.pop("PRODUCT_ETA_DAYS_BASIC", None)
+        os.environ.pop("PRODUCT_ETA_DAYS_DEEP", None)
+        body = self._body()
+        self.assertIn("기한 미설정", body)         # 임의 기한을 만들지 않음
+        self.assertNotIn("3영업일 이내", body)
+        self.assertNotIn("5영업일 이내", body)
+
+    def test_guide_lists_only_launch_products_no_arbitrary_deadlines(self):
+        # 주문이 없을 때(안내만 있는 페이지): 보류 상품명이 기한과 함께 등장하지 않는다.
+        body = self._body()
+        self.assertNotIn("연간 VIP", body)
+        self.assertNotIn("전문가 보고서", body)
+
+    def test_guide_has_no_customer_data_or_order_id(self):
+        body = self._body()  # 주문 없음 → 페이지에 고객정보·주문번호가 없어야 한다
+        self.assertNotIn("@", body)
+        self.assertNotIn("ord_", body)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
