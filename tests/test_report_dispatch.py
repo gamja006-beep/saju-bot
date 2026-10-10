@@ -422,5 +422,62 @@ class AdminGuideTest(_Base):
         self.assertNotIn("ord_", body)
 
 
+# ---- 8. 고객 이메일 표시·복사(주문 상세) ----
+class RecipientEmailCopyTest(_Base):
+    def _paid_with_email(self, email, pk):
+        o = payments.create_order(self.store, "BASIC", email, {"birth_date": "1990-05-15"})
+        payments.approve_payment(self.store, pk, o["orderId"], o["amount"], confirm_fn=_toss_ok)
+        return o["orderId"]
+
+    def _detail(self, oid):
+        r = self.c.get("/admin/orders/%s" % oid, headers=_auth())
+        self.assertEqual(r.status_code, 200)
+        return r.get_data(as_text=True)
+
+    def test_detail_shows_recipient_email_and_copy_button(self):
+        oid = self._paid_with_email("alice@example.test", "pk_a")
+        body = self._detail(oid)
+        self.assertIn('id="recipient-email">alice@example.test<', body)  # 선명한 전체 주소
+        self.assertIn("고객 이메일 복사", body)
+        self.assertIn('id="copy-email-status"', body)
+        self.assertIn("받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요", body)
+
+    def test_copy_reads_email_element_only(self):
+        oid = self._paid_with_email("alice@example.test", "pk_a")
+        body = self._detail(oid)
+        # 복사 대상은 recipient-email 요소(이메일 주소만). 주문번호/결제키는 복사 소스가 아니다.
+        self.assertIn('getElementById("recipient-email")', body)
+        self.assertNotIn("mailto:", body)  # 메일 작성/발송 안 함
+
+    def test_list_keeps_email_masked_not_full(self):
+        self._paid_with_email("alice@example.test", "pk_a")
+        body = self.c.get("/admin/orders", headers=_auth()).get_data(as_text=True)
+        self.assertIn("***", body)                      # 마스킹 유지
+        self.assertNotIn("alice@example.test", body)    # 전체 주소는 목록에 없음
+
+    def test_other_order_email_not_present(self):
+        a = self._paid_with_email("alice@example.test", "pk_a")
+        b = self._paid_with_email("bob@example.test", "pk_b")
+        body_a = self._detail(a)
+        body_b = self._detail(b)
+        self.assertIn("alice@example.test", body_a)
+        self.assertNotIn("bob@example.test", body_a)    # A 상세에 B 이메일 없음
+        self.assertIn("bob@example.test", body_b)
+        self.assertNotIn("alice@example.test", body_b)  # B 상세에 A 이메일 없음
+
+    def test_detail_template_no_browser_storage_or_log(self):
+        with open(os.path.join(ROOT, "templates", "admin_order_detail.html"), "r", encoding="utf-8") as f:
+            tpl = f.read()
+        for bad in ("localStorage", "sessionStorage", "indexedDB", "document.cookie",
+                    "console.log", "console.debug", "console.info"):
+            self.assertNotIn(bad, tpl)
+
+    def test_copy_button_is_not_a_form_submit(self):
+        oid = self._paid_with_email("alice@example.test", "pk_a")
+        body = self._detail(oid)
+        self.assertIn('id="copy-email" class="btn"', body)
+        self.assertIn('type="button" id="copy-email"', body)  # 폼 전송/발송 아님
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

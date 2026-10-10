@@ -76,8 +76,17 @@
       <div class="srow"><span class="sk">발송 완료 시각</span><span class="sv">{{ o.dispatch.sent_at }}</span></div>
       {% endif %}
     </div>
+    <!-- '고객 이메일로 직접 발송' 단계: 받는 주소를 선명히 표시하고 주소만 복사. 메일 작성/발송은 하지 않는다. -->
+    <div class="summary" id="admin-recipient">
+      <div class="srow"><span class="sk">받는 사람(수령 이메일)</span><span class="sv" id="recipient-email">{{ o.email }}</span></div>
+    </div>
+    <div class="admin-actions">
+      <button type="button" id="copy-email" class="btn">고객 이메일 복사</button>
+      <span id="copy-email-status" class="copy-status" aria-live="polite"></span>
+    </div>
     <p class="sub">외부 이메일에서 실제 보고서를 보낸 뒤에만 완료로 기록하세요. 이 버튼은 시각만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
     {% if not o.dispatch.sent %}
+    <p class="sub">받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.</p>
     <div class="admin-actions">
       <!-- POST 전용·CSRF 토큰·중복 클릭 방어(서버 멱등 + 버튼 비활성). GET 은 405. -->
       <form method="post" action="/admin/orders/{{ o.order_id }}/report/mark-sent" id="mark-sent-form">
@@ -125,6 +134,30 @@
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done).catch(function () { fallback(text, status, done); });
       } else { fallback(text, status, done); }
+    });
+  })();
+  (function () {
+    // 고객 이메일 복사: 해당 주문의 '이메일 주소만' 복사한다(주문번호·상담자료·결제정보 제외).
+    // 클립보드만 사용하며 브라우저 저장소나 로그에 남기지 않는다. 메일 작성/발송도 하지 않는다.
+    var btn = document.getElementById("copy-email");
+    if (!btn) return;
+    function fallbackEmail(text, status) {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", "");
+      ta.style.position = "absolute"; ta.style.left = "-9999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); if (status) status.textContent = "고객 이메일을 복사했어요."; }
+      catch (e) { if (status) status.textContent = "복사에 실패했어요. 주소를 길게 눌러 직접 복사해 주세요."; }
+      document.body.removeChild(ta);
+    }
+    btn.addEventListener("click", function () {
+      var el = document.getElementById("recipient-email");
+      var status = document.getElementById("copy-email-status");
+      var text = el ? el.textContent.trim() : "";  // 이메일 주소만. 다른 주문/필드는 복사 대상 아님.
+      function done() { if (status) status.textContent = "고객 이메일을 복사했어요."; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { fallbackEmail(text, status); });
+      } else { fallbackEmail(text, status); }
     });
   })();
   (function () {
