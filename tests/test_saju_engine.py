@@ -1252,37 +1252,82 @@ class JieqiBoundaryTzTest(unittest.TestCase):
 
 
 class GoldBaselineTest(unittest.TestCase):
-    """GOLD 회귀: 독립 한국 만세력 두 곳(사주클래스 sajuclass.com · 사공만세력 mobiwise.kr)이
-    같은 입력·계산규약에서 8자가 일치한 기준값(운영기록 G01~G06)과 엔진 출력이 일치해야 한다.
+    """20건 GOLD 게이트 회귀: 독립 한국 만세력 두 곳(사주클래스 sajuclass.com ·
+    사공만세력 mobiwise.kr)이 같은 입력·계산규약에서 8자가 일치한 기준값
+    (운영기록 G01~G06 + 추가 G07·G08·G10~G14·G17~G20, 경계 Z01~Z03)과
+    엔진 출력이 일치해야 한다.
 
-    주의: 이 6건은 두 출처가 합의한 '독립' 기준값이며 엔진 자체 출력이 아니다.
-    다만 GOLD 6/20 은 전체 정확성 PASS 기준(20건)에 아직 못 미치므로
-    이 테스트 통과만으로 ACCURACY=PASS 로 올리지 않는다(운영기록 참조).
+    주의: 이 기준값들은 두 출처가 합의한 '독립' 값이며 엔진 자체 출력이 아니다.
+    이 테스트 통과만으로 ACCURACY=PASS 로 올리지 않는다. 정확성 판정은
+    운영기록의 20건·경계 조건 충족 검토를 따른다.
     """
 
-    # (case, calendar, date, time, is_leap, longitude, 연, 월, 일, 시)
+    # (case, calendar, date, time, is_leap, longitude, expect_solar(YYYY-MM-DD|None=동일), 연, 월, 일, 시)
     GOLD = [
-        ("G01", "solar", "2012-02-04", "19:10", False, 126.978, "辛卯", "辛丑", "乙未", "乙酉"),
-        ("G02", "solar", "1990-05-15", "14:30", False, 126.978, "庚午", "辛巳", "庚辰", "癸未"),
-        ("G03", "solar", "1994-01-17", "15:41", False, 126.705, "癸酉", "乙丑", "癸卯", "己未"),
-        ("G04", "lunar", "1987-05-10", "14:33", False, 128.5918, "丁卯", "乙巳", "丙戌", "乙未"),
-        ("G05", "solar", "1958-08-08", "09:52", False, 126.978, "戊戌", "己未", "丁巳", "甲辰"),
-        ("G06", "lunar", "2020-04-15", "10:30", True, 126.978, "庚子", "壬午", "庚辰", "辛巳"),
+        ("G01", "solar", "2012-02-04", "19:10", False, 126.978, None, "辛卯", "辛丑", "乙未", "乙酉"),
+        ("G02", "solar", "1990-05-15", "14:30", False, 126.978, None, "庚午", "辛巳", "庚辰", "癸未"),
+        ("G03", "solar", "1994-01-17", "15:41", False, 126.705, None, "癸酉", "乙丑", "癸卯", "己未"),
+        ("G04", "lunar", "1987-05-10", "14:33", False, 128.592, "1987-06-06", "丁卯", "乙巳", "丙戌", "乙未"),
+        ("G05", "solar", "1958-08-08", "09:52", False, 126.978, None, "戊戌", "己未", "丁巳", "甲辰"),
+        ("G06", "lunar", "2020-04-15", "10:30", True, 126.978, "2020-06-06", "庚子", "壬午", "庚辰", "辛巳"),
+        ("G07", "solar", "2000-03-15", "10:30", False, 126.978, None, "庚辰", "己卯", "壬申", "乙巳"),
+        ("G08", "solar", "2005-09-10", "08:15", False, 129.075, None, "乙酉", "乙酉", "丁酉", "甲辰"),
+        ("G10", "solar", "2015-04-04", "12:20", False, 127.385, None, "乙未", "己卯", "庚戌", "壬午"),
+        ("G11", "solar", "2022-08-07", "14:30", False, 126.853, None, "壬寅", "丁未", "壬辰", "丁未"),
+        ("G12", "solar", "1960-01-15", "14:20", False, 126.978, None, "己亥", "丁丑", "壬寅", "丁未"),
+        ("G13", "solar", "1957-07-15", "10:30", False, 126.978, None, "丁酉", "丁未", "戊子", "丁巳"),
+        ("G14", "solar", "1988-06-12", "16:20", False, 126.705, None, "戊辰", "戊午", "戊戌", "己未"),
+        ("G17", "lunar", "2020-04-20", "10:30", True, 126.978, "2020-06-11", "庚子", "壬午", "乙酉", "辛巳"),
+        ("G18", "lunar", "2023-02-15", "11:45", True, 126.978, "2023-04-05", "癸卯", "丙辰", "癸巳", "戊午"),
+        ("G19", "lunar", "2001-08-15", "10:30", False, 126.978, "2001-10-01", "辛巳", "丁酉", "丁酉", "乙巳"),
+        ("G20", "solar", "1970-02-03", "12:30", False, 126.978, None, "己酉", "丁丑", "甲寅", "庚午"),
+    ]
+
+    # 경계(보정 후 23시대): 두 출처가 '23시→익일 전환(야자시 끔)'으로 합의한 값 = 엔진 sect1.
+    # 엔진 기본값(sect2=자정 전환)은 전날 일주를 제시하며 boundary_warning 으로 함께 노출된다.
+    # (case, date, time, lon, 연, 월, sect1_일, sect1_시, 기본(sect2)_일, 기본_시)
+    BOUNDARY = [
+        ("Z01", "2001-03-21", "23:50", 126.978, "辛巳", "辛卯", "甲申", "甲子", "癸未", "甲子"),
+        ("Z02", "2010-10-01", "23:50", 126.978, "庚寅", "乙酉", "乙酉", "丙子", "甲申", "丙子"),
+        ("Z03", "2020-06-11", "23:50", 126.978, "庚子", "壬午", "丙戌", "戊子", "乙酉", "戊子"),
     ]
 
     def test_gold_eight_chars_match(self):
-        for name, cal, d, t, leap, lon, y, mo, da, ti in self.GOLD:
+        for name, cal, d, t, leap, lon, exp_solar, y, mo, da, ti in self.GOLD:
             r = compute_saju(cal, d, t, "남", is_leap_month=leap, longitude=lon)
             p = r["pillars"]
             got = (p["year"]["ganzhi"], p["month"]["ganzhi"],
                    p["day"]["ganzhi"], p["time"]["ganzhi"])
             self.assertEqual(got, (y, mo, da, ti), name)
+            if exp_solar is not None:
+                self.assertEqual("%04d-%02d-%02d" % (
+                    r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), exp_solar, name)
 
-    def test_g06_real_leap_month_solar_1987_style(self):
-        # G06: 음력 윤4월 15일(2020) → 양력 2020-06-06, 시주 포함 8자 재확인(이전 미대조 건)
-        r = compute_saju("lunar", "2020-04-15", "10:30", "남", is_leap_month=True, longitude=126.978)
-        self.assertTrue(r["lunar"]["is_leap_month"])
-        self.assertEqual((r["solar"]["year"], r["solar"]["month"], r["solar"]["day"]), (2020, 6, 6))
+    def test_gold_cases_have_no_false_boundary_flags(self):
+        # 20건 중 일반 17건은 절입/23시 경계에서 떨어져 있어 거짓 경고가 없어야 한다.
+        for name, cal, d, t, leap, lon, _s, _y, _m, _da, _ti in self.GOLD:
+            r = compute_saju(cal, d, t, "남", is_leap_month=leap, longitude=lon)
+            self.assertIsNone(r["jieqi_boundary"], name)
+            self.assertIsNone(r["boundary_warning"], name)
+
+    def test_boundary_sect1_matches_agreed_and_default_is_sect2(self):
+        for name, d, t, lon, y, mo, s1d, s1t, defd, deft in self.BOUNDARY:
+            r = compute_saju("solar", d, t, "남", longitude=lon)
+            p = r["pillars"]
+            # 연·월주는 sect 무관 — 합의값과 일치
+            self.assertEqual((p["year"]["ganzhi"], p["month"]["ganzhi"]), (y, mo), name)
+            bw = r["boundary_warning"]
+            self.assertIsNotNone(bw, name)
+            self.assertEqual(bw["type"], "late_zi_23h", name)
+            # 외부 두 곳 합의값(익일 전환) = 엔진 sect1
+            self.assertEqual((bw["sect1"]["day"]["ganzhi"], bw["sect1"]["time"]["ganzhi"]),
+                             (s1d, s1t), name)
+            # 엔진 기본 명식 = sect2(자정 전환), 전날 일주를 제시
+            self.assertEqual((p["day"]["ganzhi"], p["time"]["ganzhi"]), (defd, deft), name)
+            self.assertEqual((bw["sect2"]["day"]["ganzhi"], bw["sect2"]["time"]["ganzhi"]),
+                             (defd, deft), name)
+            # 두 해석은 일주가 서로 달라야 한다(23시대 특성)
+            self.assertNotEqual(bw["sect1"]["day"]["ganzhi"], bw["sect2"]["day"]["ganzhi"], name)
 
 
 if __name__ == "__main__":
