@@ -23,14 +23,7 @@
       <div class="srow"><span class="sk">발송 완료 시각</span><span class="sv">{{ o.dispatch.sent_at }}</span></div>
       {% endif %}
     </div>
-    <ol class="guide-steps">
-      <li>결제 완료 주문 확인</li>
-      <li>아래 '최종 보고서 생성자료 복사'</li>
-      <li>명리학 챗봇에서 보고서·PDF 생성</li>
-      <li>담당자가 내용과 받는 사람 이메일 확인</li>
-      <li>고객에게 이메일로 직접 발송</li>
-      <li>실제 발송 후 '발송 완료로 기록'</li>
-    </ol>
+    {% include "_report_flow.html" %}
     <p class="sub">기록·정정 버튼은 상태만 저장하며 이메일·PDF를 발송하지 않습니다.</p>
     {% if not o.dispatch.sent %}
     <p class="sub">받는 사람 주소와 실제 발송 여부를 확인한 뒤 누르세요.</p>

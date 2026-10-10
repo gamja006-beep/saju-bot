@@ -17,17 +17,8 @@
     <!-- 관리자 전용 안내(고객 화면 아님). 고객정보·주문번호·키를 넣지 않는다. -->
     <section class="admin-guide" id="admin-guide">
       <h2 class="admin-h2">결제 후 보고서 처리 순서</h2>
-      <ol class="guide-steps">
-        <li>결제 완료 주문 확인</li>
-        <li>주문 상세에서 '최종 보고서 생성자료 복사'</li>
-        <li>명리학 챗봇에서 보고서·PDF 생성</li>
-        <li>담당자가 내용과 고객 이메일 주소 확인</li>
-        <li>고객에게 이메일로 직접 발송</li>
-        <li>실제 발송 후 '발송 완료로 기록'</li>
-      </ol>
+      {% include "_report_flow.html" %}
       <p class="sub">전달 기한: {% for g in guide_etas %}{{ g.name }} {{ g.eta }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
-      <p class="sub">'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.</p>
-      <p class="sub">'발송 완료로 기록'은 상태만 저장하며 이메일을 보내지 않습니다.</p>
     </section>
     {% if orders %}
     {% for o in orders %}

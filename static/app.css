@@ -159,6 +159,15 @@ table.pillars .ko { font-size: 12px; color: #555; }
 #copy-email { display: block; width: 100%; min-height: 48px; margin-top: 4px; }
 /* 목록: '상세 보기' 링크 대비 강화 */
 .admin-more { font-weight: 700; color: #1a5fb4; }
+/* 결제 후 보고서 처리 흐름(목록·상세 공통). 작은 화면에서 자연스럽게 줄바꿈, 가로 스크롤 없음 */
+.report-flow { margin: 10px 0; }
+.report-flow .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.flow-step { font: inherit; cursor: pointer; background: #eef2ff; border: 1px solid #c7d2fe;
+  color: #1e3a8a; border-radius: 999px; padding: 8px 12px; min-height: 40px; line-height: 1.2; }
+.flow-step:hover, .flow-step[aria-expanded="true"] { background: #1a5fb4; color: #fff; border-color: #1a5fb4; }
+.flow-step:focus-visible { outline: 2px solid #1a5fb4; outline-offset: 2px; }
+.flow-arrow { color: #9aa0a6; }
+#flow-desc { margin-top: 8px; min-height: 1.4em; }
 
 @media (max-width: 360px) {
   body { font-size: 16px; }

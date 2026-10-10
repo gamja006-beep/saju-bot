@@ -370,32 +370,49 @@ class UnmarkRouteTest(_Base):
         self.assertIn("csrf_token", sent)
 
 
-# ---- 7. 관리자 목록 상단 안내(결제 후 보고서 처리 순서) ----
+# ---- 7. 관리자 목록 상단 안내(결제 후 보고서 처리 흐름) ----
 class AdminGuideTest(_Base):
-    _STEPS = [
-        "결제 완료 주문 확인",
-        "주문 상세에서 '최종 보고서 생성자료 복사'",
-        "명리학 챗봇에서 보고서·PDF 생성",
-        "담당자가 내용과 고객 이메일 주소 확인",
-        "고객에게 이메일로 직접 발송",
-        "실제 발송 후 '발송 완료로 기록'",
-    ]
+    # 화살표 흐름의 단계 라벨(목록·상세 공통).
+    _STEPS = ["1. 결제 확인", "2. 자료 복사", "3. 보고서 작성",
+              "4. 내용·이메일 확인", "5. 고객 이메일 발송", "6. 발송 기록"]
 
     def _body(self):
         r = self.c.get("/admin/orders", headers=_auth())
         self.assertEqual(r.status_code, 200)
         return r.get_data(as_text=True)
 
+    def _detail_body(self):
+        o = payments.create_order(self.store, "BASIC", "guide@example.test", {"birth_date": "1990-05-15"})
+        payments.approve_payment(self.store, "pk_g", o["orderId"], o["amount"], confirm_fn=_toss_ok)
+        return self.c.get("/admin/orders/%s" % o["orderId"], headers=_auth()).get_data(as_text=True)
+
     def test_requires_auth(self):
         self.assertEqual(self.c.get("/admin/orders").status_code, 401)  # 관리자 전용
 
-    def test_guide_shows_all_steps_and_notes(self):
-        body = self._body()  # 주문이 없어도 안내는 항상 표시
+    def test_flow_shows_arrow_steps_and_notes(self):
+        body = self._body()  # 주문이 없어도 흐름은 항상 표시
         self.assertIn("결제 후 보고서 처리 순서", body)
         for step in self._STEPS:
             self.assertIn(step, body)
+        self.assertIn("→", body)  # 화살표 흐름
+        # 설명(hover/focus/tap 으로 표시)이 단계에 담겨 있다.
+        self.assertIn("data-desc=", body)
+        self.assertIn("'최종 보고서 생성자료 복사'를 누릅니다", body)
+        # 주의사항 3종.
         self.assertIn("'운영자 알림'은 새 주문 알림이며 고객 보고서 발송과 별개입니다.", body)
         self.assertIn("'발송 완료로 기록'은 상태만 저장하며 이메일을 보내지 않습니다.", body)
+        self.assertIn("실제 고객 이메일 발송을 확인한 뒤에만", body)
+
+    def test_flow_identical_on_list_and_detail(self):
+        # 목록과 상세가 같은 흐름·설명을 쓰므로 문구가 달라지지 않는다(공통 partial).
+        fragment = ('data-desc="주문 상세에서 \'최종 보고서 생성자료 복사\'를 누릅니다.">'
+                    '2. 자료 복사</button>')
+        list_body = self._body()
+        detail_body = self._detail_body()
+        self.assertIn(fragment, list_body)
+        self.assertIn(fragment, detail_body)
+        for step in self._STEPS:
+            self.assertIn(step, detail_body)
 
     def test_guide_eta_uses_single_source_when_set(self):
         body = self._body()  # _Base 가 PRODUCT_ETA_DAYS 3/5 설정
