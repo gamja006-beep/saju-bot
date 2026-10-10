@@ -1207,5 +1207,39 @@ class MobileUXTest(unittest.TestCase):
         self.assertIn("max-width: 360px", self._read("static/app.css"))
 
 
+class JieqiBoundaryTzTest(unittest.TestCase):
+    """절기 경계 판정 회귀: 연·월주는 출생 순간을 절기 기준 시간대(UTC+8)로 변환해 판정하고,
+    일·시주는 진태양시·sect 를 유지한다. (기준값은 작업 지시에서 제공된 회귀 앵커)"""
+
+    def _p(self, t):
+        r = compute_saju("solar", "2012-02-04", t, "남", longitude=126.978)
+        p = r["pillars"]
+        return r, (p["year"]["ganzhi"], p["month"]["ganzhi"],
+                   p["day"]["ganzhi"], p["time"]["ganzhi"])
+
+    def test_before_ipchun_19_10(self):
+        r, gz = self._p("19:10")
+        self.assertEqual(gz, ("辛卯", "辛丑", "乙未", "乙酉"))   # 입춘 전: 辛卯/辛丑
+        self.assertIsNone(r["jieqi_boundary"])                  # 경계에서 12분↑ → 경고 없음
+
+    def test_after_ipchun_19_23(self):
+        r, gz = self._p("19:23")
+        self.assertEqual(gz, ("壬辰", "壬寅", "乙未", "乙酉"))   # 입춘 후: 壬辰/壬寅
+        self.assertIsNotNone(r["jieqi_boundary"])               # 경계 근접(약 36초) → 경고
+        self.assertEqual(r["jieqi_boundary"]["type"], "jieqi_minute_boundary")
+
+    def test_day_hour_unchanged_across_boundary(self):
+        # 분 차이로 연·월주만 바뀌고 일·시주는 동일(진태양시·sect 유지).
+        _, a = self._p("19:10")
+        _, b = self._p("19:23")
+        self.assertEqual((a[2], a[3]), (b[2], b[3]))            # 일·시주 동일
+
+    def test_year_month_uses_historical_tz_not_wallclock(self):
+        # 벽시계(KST)를 그대로 넣었다면 19:10 도 입춘 후(壬寅)로 잘못 판정됐을 것.
+        # 절기 기준 변환으로 19:10 은 입춘 전(辛丑)이어야 한다.
+        _, gz = self._p("19:10")
+        self.assertEqual(gz[1], "辛丑")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

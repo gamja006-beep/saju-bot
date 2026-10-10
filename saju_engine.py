@@ -16,6 +16,7 @@
 """
 
 import datetime
+from zoneinfo import ZoneInfo
 
 from lunar_python import Solar
 from korean_lunar_calendar import KoreanLunarCalendar
@@ -26,6 +27,48 @@ SUPPORTED_YEAR_MIN = 1900
 
 # 자시(子時) 규칙: sect=2 는 자정(00:00) 기준 일자 전환(기본값), sect=1 은 23:00 전환.
 DEFAULT_SECT = 2
+
+# 연·월주(절기) 판정 기준 시간대.
+# - 한국 출생 벽시계 → 실제 순간: IANA Asia/Seoul(역사적 표준시 1954-61 UTC+8:30, DST 1948-51/87-88 반영).
+# - lunar_python 절기 기준: 중국 표준시 UTC+8. 근거: util/ShouXingUtil 의 절기 계산이
+#   `+ ONE_THIRD`(=1/3일=+8시간) 오프셋으로 Julian Day 를 만든다(qiHigh/qiLow/qiAccurate).
+# 따라서 출생 순간을 Asia/Seoul→UTC+8 로 변환한 시각으로 연·월주 절기 경계를 판정한다.
+# (벽시계 직접 투입이나 고정 1시간 차감이 아니라, 두 기준을 코드 근거로 맞춘 변환이다.)
+_KST = ZoneInfo("Asia/Seoul")
+_JIEQI_TZ = datetime.timezone(datetime.timedelta(hours=8))  # lunar_python 절기 기준(UTC+8)
+# 월(月)이 바뀌는 12 절(節). 연(年)은 입춘에서 바뀐다. 이 경계에 분 단위로 근접하면 경고한다.
+_JIE_12 = ("立春", "惊蛰", "清明", "立夏", "芒种", "小暑",
+           "立秋", "白露", "寒露", "立冬", "大雪", "小寒")
+# 절입 경계 경고 임계(초). 입력은 분 단위이고 절기 출처의 초 단위 정밀도가 확인되지 않았으므로,
+# 이 범위 내 근접은 어느 쪽인지 임의 확정하지 않고 경고한다.
+_JIEQI_WARN_SECONDS = 120
+
+
+def _to_jieqi_instant(sy, sm, sd, hh, mm):
+    """출생 civil(KST 벽시계) 순간을 lunar_python 절기 기준(UTC+8)의 naive datetime 으로 변환."""
+    aware = datetime.datetime(sy, sm, sd, hh, mm, tzinfo=_KST)
+    c = aware.astimezone(_JIEQI_TZ)
+    return c.replace(tzinfo=None)
+
+
+def _nearest_jie_seconds(lunar, birth_naive):
+    """절기 기준 시각(UTC+8)에서 출생 순간과 가장 가까운 12절까지의 초 차이. 없으면 None."""
+    try:
+        table = lunar.getJieQiTable()
+    except Exception:
+        return None
+    best = None
+    for name, s in table.items():
+        if not any(j in name for j in _JIE_12):
+            continue
+        try:
+            st = datetime.datetime(s.getYear(), s.getMonth(), s.getDay(),
+                                   s.getHour(), s.getMinute(), s.getSecond())
+        except Exception:
+            continue
+        delta = abs((birth_naive - st).total_seconds())
+        best = delta if best is None else min(best, delta)
+    return best
 
 GAN_KO = {
     "甲": "갑", "乙": "을", "丙": "병", "丁": "정", "戊": "무",
@@ -182,16 +225,40 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
         # 경도 미입력: 벽시계 기준 계산을 유지하되 미보정임을 알린다.
         needs_confirmation = True
 
-    # 사주 4주: 확정된(필요 시 보정된) 양력 시각을 lunar_python 엔진에 투입
+    # 일·시주: 진태양시·sect 규칙 그대로. 보정된(또는 벽시계) 시각을 lunar_python 에 투입.
     ec = Solar.fromYmdHms(eff_y, eff_m, eff_d, eff_hour, eff_minute, eff_second).getLunar().getEightChar()
     ec.setSect(DEFAULT_SECT)
 
+    # 연·월주: 출생 순간을 절기 기준 시간대(UTC+8)로 변환한 뒤 그 시각으로 절기 경계를 판정한다.
+    # 시간 미입력이면 정오(12:00)를 대표 시각으로 사용한다(그 날 절입이 있으면 아래에서 경고).
+    ym_hh, ym_mm = (hour, minute) if has_time else (12, 0)
+    ym_cst = _to_jieqi_instant(solar_y, solar_m, solar_d, ym_hh, ym_mm)
+    lunar_ym = Solar.fromYmdHms(ym_cst.year, ym_cst.month, ym_cst.day,
+                                ym_cst.hour, ym_cst.minute, ym_cst.second).getLunar()
+    ec_ym = lunar_ym.getEightChar()
+
     pillars = {
-        "year": _pillar(ec.getYearGan(), ec.getYearZhi()),
-        "month": _pillar(ec.getMonthGan(), ec.getMonthZhi()),
+        "year": _pillar(ec_ym.getYearGan(), ec_ym.getYearZhi()),
+        "month": _pillar(ec_ym.getMonthGan(), ec_ym.getMonthZhi()),
         "day": _pillar(ec.getDayGan(), ec.getDayZhi()),
         "time": _pillar(ec.getTimeGan(), ec.getTimeZhi()) if has_time else None,
     }
+
+    # 절입(12절) 경계 근접 경고: 연·월주를 임의 확정하지 않고 경고한다.
+    # - 시간 입력: 가장 가까운 절까지 120초 이내면 경고(분 단위 입력·초 정밀도 미확인).
+    # - 시간 미입력: 대표 정오 기준 12시간 이내에 절입이 있으면 하루 중 시간에 따라 달라질 수 있어 경고.
+    jieqi_boundary = None
+    _near = _nearest_jie_seconds(lunar_ym, ym_cst)
+    if _near is not None and _near <= (_JIEQI_WARN_SECONDS if has_time else 12 * 3600):
+        jieqi_boundary = {
+            "type": "jieqi_minute_boundary" if has_time else "jieqi_day_unknown_time",
+            "message": (
+                "절입(월·연이 바뀌는 절기) 경계에 근접한 출생입니다. 절기 시각의 초 단위 정밀도가 "
+                "확인되지 않아 연·월주가 달라질 수 있으니 참고로만 사용하세요."
+                + ("" if has_time else " (출생 시간 미입력: 하루 중 시각에 따라 달라질 수 있습니다.)")
+            ),
+            "nearest_jie_seconds": int(_near),
+        }
 
     boundary_warning = None
     if has_time and eff_hour == 23:
@@ -241,16 +308,19 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
         },
         "sect": DEFAULT_SECT,
         "convention": {
-            "timezone": "Asia/Seoul" if time_correction.get("applied") else "KST-wallclock",
+            # 연·월주 절기 판정: 출생 순간을 Asia/Seoul(역사적 표준시·DST) → UTC+8(절기 기준)으로 변환.
+            "year_month_jieqi_tz": "Asia/Seoul->UTC+8(jieqi)",
+            "day_time_timezone": "Asia/Seoul" if time_correction.get("applied") else "KST-wallclock",
             "longitude_correction": bool(time_correction.get("applied")),
-            "historical_std_time": bool(time_correction.get("applied")),
-            "dst": bool(time_correction.get("applied")),
+            "historical_std_time": True,  # 연·월주는 항상 Asia/Seoul 역사적 표준시로 순간 환산
+            "dst": True,
             "zi_rule": "sect=2(00:00)",
         },
         "time_correction": time_correction,
         "needs_confirmation": needs_confirmation,
         "pillars": pillars,
         "boundary_warning": boundary_warning,
+        "jieqi_boundary": jieqi_boundary,
         "accuracy_note": (
             "한국 음력 변환은 KASI 기준. 진태양시 보정 "
             + ("적용됨(경도+표준시/DST+균시차). " if time_correction.get("applied")
