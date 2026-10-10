@@ -3,30 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>결제 완료</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <title>결제 완료 · 행운 사주풀이</title>
+  <link rel="stylesheet" href="/static/home.css">
 </head>
 <body>
-  <main class="app">
-    <div class="step">
-      {% if mode != 'live' %}<p class="paid-notice">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>{% endif %}
-      <h2>결제가 확인되었습니다</h2>
-      <p>보고서는 담당자 확인을 거쳐 입력하신 이메일로 발송됩니다(자동 즉시 발송이 아닙니다). 전화·화상·대면 상담은 제공하지 않습니다.</p>
-      {% if eta %}<p>예상 발송 기간: {{ eta }}</p>{% endif %}
-      {% if order_id %}
-      <div class="summary" style="margin-top:14px;">
-        <div class="srow">
-          <span class="sk">문의용 주문번호</span>
-          <span class="sv" id="order-id">{{ order_id }}</span>
+  <div class="wrap">
+    <header class="site-top">
+      <a class="brand" href="/"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M78 8 C44 14 22 42 22 70 C22 100 48 118 78 114 C56 104 46 86 46 66 C46 42 58 22 78 8 Z" fill="#E3B65C"></path></svg>행운 사주풀이</a>
+    </header>
+    <main class="app" style="max-width:620px;margin:1.2rem auto;">
+      <div class="step">
+        {% if mode != 'live' %}<p class="paid-notice">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>{% endif %}
+        <h2>결제가 확인되었습니다</h2>
+        <p>보고서는 담당자 확인을 거쳐 입력하신 이메일로 발송됩니다(자동 즉시 발송이 아닙니다). 전화·화상·대면 상담은 제공하지 않습니다.</p>
+        {% if eta %}<p>예상 발송 기간: {{ eta }}</p>{% endif %}
+        {% if order_id %}
+        <div class="summary" style="margin-top:14px;">
+          <div class="srow">
+            <span class="sk">문의용 주문번호</span>
+            <span class="sv" id="order-id">{{ order_id }}</span>
+          </div>
         </div>
+        <p class="hint">문의 시 이 주문번호를 알려 주세요.</p>
+        <button type="button" id="copy-order" class="btn ghost" style="flex:none;min-height:48px;padding:0 1.4rem;">주문번호 복사</button>
+        <span id="copy-status" class="copy-status" aria-live="polite"></span>
+        {% endif %}
+        <p style="margin-top:16px;"><a href="/">처음으로</a></p>
       </div>
-      <p class="hint">문의 시 이 주문번호를 알려 주세요.</p>
-      <button type="button" id="copy-order" class="btn ghost" style="min-height:48px;">주문번호 복사</button>
-      <span id="copy-status" class="copy-status" aria-live="polite"></span>
-      {% endif %}
-      <p style="margin-top:16px;"><a href="/">처음으로</a></p>
-    </div>
-  </main>
+    </main>
+  </div>
   <script>
   (function () {
     var btn = document.getElementById("copy-order");

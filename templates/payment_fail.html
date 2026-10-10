@@ -3,16 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>결제 실패</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <title>결제 실패 · 행운 사주풀이</title>
+  <link rel="stylesheet" href="/static/home.css">
 </head>
 <body>
-  <main class="app">
-    <div class="step">
-      <h2>결제가 완료되지 않았습니다</h2>
-      <p>{{ message }}</p>
-      <p><a href="/">처음으로 돌아가기</a></p>
-    </div>
-  </main>
+  <div class="wrap">
+    <header class="site-top">
+      <a class="brand" href="/"><svg viewBox="0 0 120 120" aria-hidden="true"><path d="M78 8 C44 14 22 42 22 70 C22 100 48 118 78 114 C56 104 46 86 46 66 C46 42 58 22 78 8 Z" fill="#E3B65C"></path></svg>행운 사주풀이</a>
+    </header>
+    <main class="app" style="max-width:620px;margin:1.2rem auto;">
+      <div class="step">
+        <h2>결제가 완료되지 않았습니다</h2>
+        <p>{{ message }}</p>
+        <p style="margin-top:16px;"><a href="/">처음으로 돌아가기</a></p>
+      </div>
+    </main>
+  </div>
 </body>
 </html>

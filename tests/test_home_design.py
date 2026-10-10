@@ -46,8 +46,16 @@ class HomeServedTest(unittest.TestCase):
         self.assertNotIn("maximum-scale", html)
         self.assertNotIn("user-scalable", html)
 
-    def test_payment_and_admin_pages_keep_shared_css(self):
-        for rel in ("templates/payment_success.html", "templates/payment_fail.html"):
+    def test_customer_pages_use_home_css(self):
+        # 고객용 화면(홈·무료·결제 성공/실패·법적 고지)은 하나의 디자인 체계(home.css)로 통일한다.
+        for rel in ("templates/payment_success.html", "templates/payment_fail.html",
+                    "templates/legal.html"):
+            body = _read(rel)
+            self.assertIn("/static/home.css", body)
+            self.assertNotIn("/static/app.css", body)
+
+    def test_admin_pages_use_app_css(self):
+        for rel in ("templates/admin_orders.html", "templates/admin_order_detail.html"):
             self.assertIn("/static/app.css", _read(rel))
 
 

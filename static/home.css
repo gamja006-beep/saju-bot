@@ -121,6 +121,10 @@ table.pillars .ko { font-size: .8rem; color: var(--muted); }
 .badge.ai { background: #243A6B; color: #DCE6FF; }
 .badge.expert { background: #1F5C50; color: #E6FFF7; }
 .badge.email { background: #5A4636; color: #FBEFE0; }
+.badge.soon-badge { background: var(--line); color: var(--muted); }
+/* 보류 상품(1차 출시 제외): 구매 가능한 것처럼 보이지 않게 흐리게 표시 */
+.product.held { opacity: .72; }
+.product.held .price { color: var(--muted); }
 #paid-extra { margin-top: 1rem; padding: .9rem; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); }
 .notices { font-size: .85rem; color: var(--muted); margin-top: 1rem; padding-left: 1.2rem; }
 .notices li { margin: .4rem 0; }

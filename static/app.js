@@ -50,8 +50,10 @@ var SERVICE_NAME = "행운 사주풀이";
 // 유료 보고서 전달 안내(상품 카드·주문 확인에서 동일 문구 사용).
 // 즉시 자동 발송이나 특정 자격 보유자의 검토를 주장하지 않는다.
 var DELIVERY_NOTE = "명식 확인·해석·검토 후 이메일로 보내 드려 시간이 걸립니다(즉시 자동 발송 아님).";
-// 상품 비교에서 처음 보여줄 대표 3개(무료/핵심/전문가). 나머지는 '더 보기'로 펼침.
-var REPRESENTATIVE_PRODUCTS = { free: true, basic_9900: true, expert_99000: true };
+// 1차 출시 대상(무료/기본/심층)을 먼저 보여 준다. 나머지(보류 상품)는 '더 보기'로 펼친다.
+var REPRESENTATIVE_PRODUCTS = { free: true, basic_9900: true, deep_39000: true };
+// 보류 상품(1차 출시 제외): 구매 가능한 것처럼 보이지 않도록 '준비 중'으로 표시한다.
+var HELD_PRODUCTS = { expert_99000: true, life_290000: true, relation_590000: true, vip_990000: true };
 
 // 안전한 DOM 생성 헬퍼: 동적 텍스트는 항상 textContent 로만 넣는다(XSS 방지).
 function el(tag, cls, text) {
@@ -459,16 +461,20 @@ function renderProducts() {
     div.setAttribute("role", "radio");
     div.setAttribute("tabindex", "0");
     div.setAttribute("aria-checked", pr.id === selectedProduct ? "true" : "false");
-    var badge = pr.kind === "free"
-      ? ""
-      : "<span class=\"badge email\">담당자 확인 후 이메일</span>";
+    var held = HELD_PRODUCTS[pr.id] === true;
+    if (held) div.classList.add("held");
+    var badge = pr.kind === "free" ? ""
+      : (held ? "<span class=\"badge soon-badge\">준비 중</span>"
+              : "<span class=\"badge email\">담당자 확인 후 이메일</span>");
     var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
       esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {
       html += "<div class=\"meta\">" + esc(DELIVERY_NOTE) + "</div>";
-      if (isHeldLive(pr.id)) {
+      if (held) {
+        html += "<button type=\"button\" class=\"pay\" disabled>준비 중 · 현재 신청 불가</button>";
+      } else if (isHeldLive(pr.id)) {
         html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
       } else {
         html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
