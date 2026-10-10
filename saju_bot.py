@@ -337,9 +337,18 @@ def payment_success():
     # 발송 실패·timeout 은 아웃박스에 기록될 뿐 결제 성공과 PAID 상태에 영향을 주지 않는다
     # (notify_order_safe 가 모든 예외를 삼킨다). 백그라운드 thread/fire-and-forget 미사용.
     notifier.notify_order_safe(ORDER_STORE, approval.get("orderId") or order_id)
+    # 확정된 전달기한을 상품 카드·관리자와 동일한 단일 출처(product_delivery_eta)로 표시한다.
+    # 미확정이거나 조회 실패 시 None(성공 화면은 영향 없이 렌더). 개인정보/내부값은 노출하지 않는다.
+    eta = None
+    try:
+        o = ORDER_STORE.get_order(approval.get("orderId") or order_id)
+        if o:
+            eta = payments.product_delivery_eta(o.get("product_code"))
+    except Exception:
+        eta = None
     # 고객 문의용 주문번호만 노출(paymentKey/이메일/내부값 비노출).
     return render_template("payment_success.html", mode=payments.payment_mode(),
-                           order_id=approval.get("orderId"))
+                           order_id=approval.get("orderId"), eta=eta)
 
 
 @app.route('/webhooks/toss', methods=['POST'])

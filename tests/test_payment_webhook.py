@@ -487,5 +487,37 @@ class TimeoutBoundsTest(unittest.TestCase):
         self.assertLessEqual(seen["timeout"], 3)
 
 
+class SuccessEtaDisplayTest(_Base):
+    """결제 성공 화면이 상품 카드·관리자와 동일한 단일 출처(product_delivery_eta)로 전달기한을 표시."""
+
+    def _success_for(self, code, pk, eta_days=None):
+        if eta_days is not None:
+            os.environ["PRODUCT_ETA_DAYS_%s" % code] = eta_days
+            self.addCleanup(lambda: os.environ.pop("PRODUCT_ETA_DAYS_%s" % code, None))
+        o = payments.create_order(self.store, code, "c@example.com", {"birth_date": "1990-05-15"})
+        oid, amount = o["orderId"], o["amount"]
+        saved_confirm = payments._toss_confirm
+        saved_http = notifier._http_post
+        payments._toss_confirm = lambda **kw: {"orderId": oid, "totalAmount": amount, "status": "DONE"}
+        notifier._http_post = lambda url, body, secret, timeout=10: (200, {
+            "event_id": body["event_id"], "order_id": body["order_id"],
+            "channel": body["channel"], "status": "sent"})
+        try:
+            return self.c.get("/payment/success?paymentKey=%s&orderId=%s&amount=%d" % (pk, oid, amount))
+        finally:
+            payments._toss_confirm = saved_confirm
+            notifier._http_post = saved_http
+
+    def test_success_shows_confirmed_eta(self):
+        r = self._success_for("BASIC", "pk_b", eta_days="3")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("3영업일 이내", r.get_data(as_text=True))
+
+    def test_success_omits_eta_when_unset(self):
+        r = self._success_for("DEEP", "pk_d")  # PRODUCT_ETA_DAYS_DEEP 미설정
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("예상 발송 기간", r.get_data(as_text=True))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
