@@ -306,6 +306,22 @@ class InMemoryOrderStore:
             r["updated_at"] = now
             return (True, now)
 
+    def unmark_report_sent(self, order_id, now):
+        """잘못 기록된 '발송 완료'를 '발송 대기'로 정정(report_sent_at 삭제)한다.
+
+        PAID 이고 report_sent_at 이 있을 때만 적용한다. 이미 대기 상태면 변경 없음(재요청 안전).
+        이메일 발송/취소/환불/결제 상태는 바꾸지 않고 완료 시각만 지운다. 반환: changed(bool)."""
+        self.calls += 1
+        with self._lock:
+            r = self.orders.get(order_id)
+            if not r or r.get("status") != "PAID":
+                return False
+            if not r.get("report_sent_at"):
+                return False
+            r["report_sent_at"] = None
+            r["updated_at"] = now
+            return True
+
     # ---- 알림 아웃박스 (PAID 전환과 원자적으로 기록) ----
     def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):
         """주문을 PAID 로 올리고 채널별 알림 작업을 같은 임계구역에서 기록한다.
@@ -516,6 +532,16 @@ class PostgresOrderStore:
             changed = (cur.rowcount or 0) > 0
         o = self.get_order(order_id)  # 이미 완료였던 경우의 기존 시각도 반영
         return (changed, o.get("report_sent_at") if o else None)
+
+    def unmark_report_sent(self, order_id, now):
+        """잘못 기록된 '발송 완료'를 '발송 대기'로 정정(report_sent_at=NULL). PAID 이고 값이 있을
+        때만 적용(재요청 안전). 이메일/환불/결제 상태 변경 없음. 반환: changed(bool)."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE orders SET report_sent_at=NULL, updated_at=%s"
+                " WHERE order_id=%s AND status='PAID' AND report_sent_at IS NOT NULL",
+                (now, order_id))
+            return (cur.rowcount or 0) > 0
 
     # ---- 알림 아웃박스 ----
     def mark_paid_with_notifications(self, order_id, payment_key, now, notifications):

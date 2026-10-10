@@ -85,6 +85,15 @@
         <button type="submit" id="mark-sent-btn" class="btn primary">발송 완료로 기록</button>
       </form>
     </div>
+    {% else %}
+    <p class="sub">잘못 기록된 경우 아래에서 '발송 대기'로 정정할 수 있습니다. 정정은 완료 기록(시각)만 되돌리며, 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않습니다.</p>
+    <div class="admin-actions">
+      <!-- POST 전용·CSRF 토큰·중복 요청 안전(서버 멱등 + 버튼 비활성). GET 은 405. -->
+      <form method="post" action="/admin/orders/{{ o.order_id }}/report/unmark-sent" id="unmark-sent-form">
+        <input type="hidden" name="csrf_token" value="{{ o.report_unmark_csrf }}">
+        <button type="submit" id="unmark-sent-btn" class="btn">발송 완료 기록 정정</button>
+      </form>
+    </div>
     {% endif %}
     {% if o.dispatch_result %}
     <p class="sub" id="dispatch-result" aria-live="polite">{{ o.dispatch_result }}</p>
@@ -119,12 +128,16 @@
     });
   })();
   (function () {
-    // 중복 클릭 방어: 제출 즉시 버튼을 비활성화한다(서버도 멱등 처리).
-    var form = document.getElementById("mark-sent-form");
-    if (!form) return;
-    form.addEventListener("submit", function () {
-      var b = document.getElementById("mark-sent-btn");
-      if (b) { b.disabled = true; b.textContent = "기록 중..."; }
+    // 중복 클릭/요청 방어: 제출 즉시 버튼을 비활성화한다(서버도 멱등 처리).
+    var specs = [["mark-sent-form", "mark-sent-btn", "기록 중..."],
+                 ["unmark-sent-form", "unmark-sent-btn", "정정 중..."]];
+    specs.forEach(function (s) {
+      var form = document.getElementById(s[0]);
+      if (!form) return;
+      form.addEventListener("submit", function () {
+        var b = document.getElementById(s[1]);
+        if (b) { b.disabled = true; b.textContent = s[2]; }
+      });
     });
   })();
   </script>

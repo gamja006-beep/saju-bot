@@ -142,6 +142,18 @@ def _report_csrf_ok(order_id, token):
     return bool(token) and hmac.compare_digest(_report_csrf_token(order_id), token)
 
 
+def _report_unmark_csrf_token(order_id):
+    """정정(발송 완료 → 발송 대기) 전용 CSRF 토큰. 기록용 토큰과 메시지를 달리해 재사용을 막는다."""
+    _, pw = _admin_credentials()
+    key = (pw or "").encode("utf-8")
+    msg = ("report-unmark:" + (order_id or "")).encode("utf-8")
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
+
+
+def _report_unmark_csrf_ok(order_id, token):
+    return bool(token) and hmac.compare_digest(_report_unmark_csrf_token(order_id), token)
+
+
 def _dispatch_eta_guidance(code):
     """담당자용 전달기한 안내. 단일 출처(payments.product_delivery_eta)만 사용하고,
     정확한 마감 '날짜'는 계산·표시하지 않는다('N영업일 이내'만). 미설정이면 그 사실만 알린다."""
@@ -637,7 +649,8 @@ def _build_order_detail_view(store, order, order_id, retry_result=None, dispatch
         "retry_result": retry_result,  # 수동 재전송 결과 메시지(없으면 None)
         "dispatch": _dispatch_view(order),            # 발송 상태·기한 안내
         "report_csrf": _report_csrf_token(order_id),  # 발송 완료 기록 폼 CSRF 토큰
-        "dispatch_result": dispatch_result,           # 발송 완료 기록 결과 메시지
+        "report_unmark_csrf": _report_unmark_csrf_token(order_id),  # 발송 완료 정정 폼 CSRF 토큰
+        "dispatch_result": dispatch_result,           # 발송 완료 기록/정정 결과 메시지
     }
 
 
@@ -715,6 +728,33 @@ def admin_order_mark_report_sent(order_id):
         abort(500)  # 내부 오류·비밀값 비노출
     msg = "발송 완료로 기록했습니다." if changed else "이미 발송 완료로 기록된 주문입니다."
     order = store.get_order(order_id) or order  # 갱신된 완료 시각 반영
+    view = _build_order_detail_view(store, order, order_id, dispatch_result=msg)
+    return _with_noindex(render_template("admin_order_detail.html", o=view))
+
+
+@admin_bp.route("/admin/orders/<order_id>/report/unmark-sent", methods=["POST"])
+@require_admin
+def admin_order_unmark_report_sent(order_id):
+    """잘못 기록된 '발송 완료'를 '발송 대기'로 정정한다(report_sent_at 삭제, POST 전용).
+
+    - 완료 시각만 지운다. 실제 이메일 발송·취소·환불·결제 상태는 바꾸지 않는다.
+    - CSRF 토큰 검증 + PAID 전용 + 이미 대기면 안전 처리(재요청 안전)."""
+    if not _report_unmark_csrf_ok(order_id, request.form.get("csrf_token")):
+        abort(400)  # CSRF 토큰 불일치/누락
+    store = _get_store()
+    try:
+        order = store.get_order(order_id)
+    except Exception:
+        abort(500)
+    if not order or order.get("status") != "PAID":
+        abort(404)
+    try:
+        changed = store.unmark_report_sent(order_id, payments._now())
+    except Exception:
+        abort(500)  # 내부 오류·비밀값 비노출
+    msg = ("발송 완료 기록을 정정해 '발송 대기'로 되돌렸습니다."
+           if changed else "이미 '발송 대기' 상태입니다.")
+    order = store.get_order(order_id) or order  # 갱신된 상태 반영
     view = _build_order_detail_view(store, order, order_id, dispatch_result=msg)
     return _with_noindex(render_template("admin_order_detail.html", o=view))
 

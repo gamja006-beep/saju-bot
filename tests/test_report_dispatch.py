@@ -242,5 +242,133 @@ class MarkSentRouteTest(_Base):
         self.assertEqual(calls, [])
 
 
+# ---- 5. 발송 완료 정정(저장소) ----
+class StoreUnmarkSentTest(_Base):
+    def test_unmark_reverts_once_then_idempotent(self):
+        oid = self._paid()
+        self.store.mark_report_sent(oid, _now())
+        self.assertIsNotNone(self.store.get_order(oid)["report_sent_at"])
+        self.assertTrue(self.store.unmark_report_sent(oid, _now()))
+        self.assertIsNone(self.store.get_order(oid)["report_sent_at"])
+        # 재요청(이미 대기): 변경 없음.
+        self.assertFalse(self.store.unmark_report_sent(oid, _now()))
+
+    def test_unmark_noop_when_never_sent(self):
+        oid = self._paid()
+        self.assertFalse(self.store.unmark_report_sent(oid, _now()))
+
+    def test_unmark_non_paid_and_unknown(self):
+        o = payments.create_order(self.store, "BASIC", "c@example.com", {"birth_date": "1990-01-01"})
+        self.assertFalse(self.store.unmark_report_sent(o["orderId"], _now()))  # PENDING
+        self.assertFalse(self.store.unmark_report_sent("ord_nope", _now()))
+
+    def test_unmark_keeps_paid_status_and_amount(self):
+        oid = self._paid()
+        self.store.mark_report_sent(oid, _now())
+        before = self.store.get_order(oid)
+        self.store.unmark_report_sent(oid, _now())
+        after = self.store.get_order(oid)
+        self.assertEqual(after["status"], "PAID")
+        self.assertEqual(after["amount"], before["amount"])
+
+
+class PgUnmarkSqlTest(unittest.TestCase):
+    def _store(self, fake):
+        s = payments.PostgresOrderStore.__new__(payments.PostgresOrderStore)
+        s._connect = lambda: fake
+        return s
+
+    def test_update_guards_paid_and_not_null(self):
+        fake = _FakeConn(row=None, update_rowcount=1)
+        self.assertTrue(self._store(fake).unmark_report_sent("ord_x", _now()))
+        upd = [s for (s, _) in fake.executed if "report_sent_at=NULL" in s][0]
+        self.assertIn("status='PAID'", upd)
+        self.assertIn("report_sent_at IS NOT NULL", upd)
+
+    def test_no_row_means_already_waiting(self):
+        fake = _FakeConn(row=None, update_rowcount=0)
+        self.assertFalse(self._store(fake).unmark_report_sent("ord_x", _now()))
+
+
+# ---- 6. 발송 완료 정정(관리자 라우트) ----
+class UnmarkRouteTest(_Base):
+    def _url(self, oid):
+        return "/admin/orders/%s/report/unmark-sent" % oid
+
+    def _token(self, oid):
+        return admin._report_unmark_csrf_token(oid)
+
+    def _paid_sent(self, code="BASIC"):
+        oid = self._paid(code)
+        self.store.mark_report_sent(oid, _now())
+        return oid
+
+    def test_requires_auth(self):
+        oid = self._paid_sent()
+        r = self.c.post(self._url(oid), data={"csrf_token": self._token(oid)})
+        self.assertEqual(r.status_code, 401)
+
+    def test_get_not_allowed(self):
+        oid = self._paid_sent()
+        self.assertEqual(self.c.get(self._url(oid), headers=_auth()).status_code, 405)
+
+    def test_missing_or_bad_csrf_rejected(self):
+        oid = self._paid_sent()
+        self.assertEqual(self.c.post(self._url(oid), headers=_auth()).status_code, 400)
+        r = self.c.post(self._url(oid), headers=_auth(), data={"csrf_token": "wrong"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIsNotNone(self.store.get_order(oid)["report_sent_at"])  # 정정 안 됨
+
+    def test_mark_token_not_accepted_for_unmark(self):
+        # 기록용 토큰으로는 정정이 되지 않아야 한다(토큰 분리).
+        oid = self._paid_sent()
+        r = self.c.post(self._url(oid), headers=_auth(),
+                        data={"csrf_token": admin._report_csrf_token(oid)})
+        self.assertEqual(r.status_code, 400)
+
+    def test_valid_reverts_once_and_duplicate_safe(self):
+        oid = self._paid_sent()
+        r1 = self.c.post(self._url(oid), headers=_auth(), data={"csrf_token": self._token(oid)})
+        self.assertEqual(r1.status_code, 200)
+        self.assertIn("발송 대기", r1.get_data(as_text=True))
+        self.assertIsNone(self.store.get_order(oid)["report_sent_at"])
+        # 재요청: 안전 처리.
+        r2 = self.c.post(self._url(oid), headers=_auth(), data={"csrf_token": self._token(oid)})
+        self.assertEqual(r2.status_code, 200)
+        self.assertIn("이미", r2.get_data(as_text=True))
+        self.assertIn("상태입니다", r2.get_data(as_text=True))  # 재요청 안전 메시지
+        self.assertIsNone(self.store.get_order(oid)["report_sent_at"])
+
+    def test_non_paid_order_404(self):
+        o = payments.create_order(self.store, "BASIC", "c@example.com", {"birth_date": "1990-01-01"})
+        oid = o["orderId"]  # PENDING
+        r = self.c.post(self._url(oid), headers=_auth(), data={"csrf_token": self._token(oid)})
+        self.assertEqual(r.status_code, 404)
+
+    def test_unmark_does_not_send_or_change_payment(self):
+        oid = self._paid_sent()
+        import notifier
+        calls = []
+        saved = notifier._http_post
+        notifier._http_post = lambda *a, **k: calls.append(1) or (200, {})
+        try:
+            self.c.post(self._url(oid), headers=_auth(), data={"csrf_token": self._token(oid)})
+        finally:
+            notifier._http_post = saved
+        self.assertEqual(calls, [])
+        self.assertEqual(self.store.get_order(oid)["status"], "PAID")  # 결제 상태 불변
+
+    def test_detail_shows_correct_button_by_state(self):
+        oid = self._paid("BASIC")
+        waiting = self.c.get("/admin/orders/%s" % oid, headers=_auth()).get_data(as_text=True)
+        self.assertIn("발송 완료로 기록", waiting)
+        self.assertNotIn("발송 완료 기록 정정", waiting)
+        self.store.mark_report_sent(oid, _now())
+        sent = self.c.get("/admin/orders/%s" % oid, headers=_auth()).get_data(as_text=True)
+        self.assertIn("발송 완료 기록 정정", sent)
+        self.assertIn("바꾸지 않습니다", sent)   # 확인 안내(이메일·환불·결제 상태 불변)
+        self.assertIn("csrf_token", sent)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
