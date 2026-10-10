@@ -100,23 +100,36 @@ class StatusHelpersTest(_EnvCase):
 
     def test_business_info_complete_is_pass(self):
         info = {"representative": "오준영", "reg_no": "564-05-02583",
-                "mail_order_no": "2025-고양덕양구-2991"}
-        env = {"BIZ_ADDRESS": "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"}
-        self.assertEqual(check_launch.check_business_info(info, env)["status"], check_launch.PASS)
+                "mail_order_no": "2025-고양덕양구-2991",
+                "address": "경기도 고양시 덕양구 중앙로558번길 57"}
+        self.assertEqual(check_launch.check_business_info(info, {})["status"], check_launch.PASS)
 
-    def test_business_info_confirmed_defaults_pass_but_address_blocks(self):
-        # 신고번호·대표자·등록번호는 확정 기본값으로 통과하되, 주소 공개표기(BIZ_ADDRESS) 미설정이면 차단.
-        import legal_pages as lp
-        info = lp.business_info()  # 주소는 초안 기본값이 보이지만 BIZ_ADDRESS 환경변수는 비어 있음
-        self.assertEqual(info["representative"], "오준영")
-        self.assertEqual(info["reg_no"], "564-05-02583")
+    def test_business_info_blank_address_is_pending(self):
+        # 주소 공개 표기가 비면(합성 빈 info) 여전히 차단된다.
+        info = {"representative": "오준영", "reg_no": "564-05-02583",
+                "mail_order_no": "2025-고양덕양구-2991", "address": ""}
         r = check_launch.check_business_info(info, {})
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("BIZ_ADDRESS", r["detail"])
 
-    def test_contact_missing_phone_is_pending_even_with_email_default(self):
+    def test_business_info_confirmed_defaults_pass(self):
+        # 대표자·등록번호·신고번호·주소 공개 표기 모두 확정 기본값으로 통과한다.
         import legal_pages as lp
-        info = lp.business_info()  # email 은 기본값 존재, phone 은 비어 있음
+        info = lp.business_info()
+        self.assertEqual(info["representative"], "오준영")
+        self.assertEqual(info["reg_no"], "564-05-02583")
+        self.assertTrue(info["address"])
+        self.assertEqual(check_launch.check_business_info(info, {})["status"], check_launch.PASS)
+
+    def test_contact_confirmed_defaults_pass(self):
+        # 이메일·문의 전화 모두 확정 기본값으로 통과한다.
+        import legal_pages as lp
+        info = lp.business_info()
+        self.assertTrue(info["phone"])
+        self.assertEqual(check_launch.check_contact(info, {})["status"], check_launch.PASS)
+
+    def test_contact_blank_phone_is_pending(self):
+        info = {"email": "help@example.test", "phone": ""}
         r = check_launch.check_contact(info, {})
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("BIZ_PHONE", r["detail"])
@@ -138,7 +151,11 @@ class DevEnvBlockersTest(_EnvCase):
     def test_empty_env_reports_blockers_and_exit_1(self):
         results = check_launch.run_checks()
         by = {r["key"]: r["status"] for r in results}
-        for key in ("business_info", "contact", "payment"):
+        # 사업자 표시·문의처는 운영자 확정 기본값으로 통과한다.
+        self.assertEqual(by["business_info"], check_launch.PASS)
+        self.assertEqual(by["contact"], check_launch.PASS)
+        # 결제·법적 고지·전달기한은 환경변수 미설정이라 여전히 미완료(차단).
+        for key in ("payment", "legal", "launch_products"):
             self.assertEqual(by[key], check_launch.PENDING, key)
         buf = io.StringIO()
         with redirect_stdout(buf):
@@ -207,11 +224,13 @@ class LivePaymentGuardTest(_EnvCase):
         os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
         os.environ["BIZ_PHONE"] = "031-000-0000"
 
-    def test_launch_blockers_lists_all_common_conditions_when_unset(self):
+    def test_launch_blockers_lists_legal_when_biz_confirmed(self):
+        # 주소·전화는 확정 기본값으로 통과하므로, 환경변수 미설정 상태에서도
+        # 공통 차단은 법적 고지 미확정뿐이다.
         joined = " ".join(payments.launch_blockers())
-        self.assertIn("BIZ_ADDRESS", joined)
-        self.assertIn("BIZ_PHONE", joined)
-        self.assertIn("법적 고지", joined)  # 약관·개인정보·환불 미확정도 공통 차단
+        self.assertNotIn("BIZ_ADDRESS", joined)
+        self.assertNotIn("BIZ_PHONE", joined)
+        self.assertIn("법적 고지", joined)  # 약관·개인정보·환불 미확정은 여전히 공통 차단
 
     def test_launch_blockers_empty_only_when_biz_and_legal_resolved(self):
         self._set_biz()
@@ -222,9 +241,9 @@ class LivePaymentGuardTest(_EnvCase):
     def test_live_blocked_by_each_condition(self):
         self._set_live_keys()
         self.assertTrue(payments.payments_enabled())
-        # (1) 주소·전화·법적 모두 미확정
+        # (1) 주소·전화는 확정 기본값으로 통과하나 법적 고지 미확정 → 차단
         self.assertFalse(payments.live_payments_ready())
-        # (2) 주소·전화만 설정, 법적 고지 미확정 → 여전히 차단
+        # (2) 주소·전화 환경변수까지 설정해도 법적 고지 미확정 → 여전히 차단
         self._set_biz()
         self.assertFalse(payments.live_payments_ready())
         # (3) 법적 고지까지 해소 → 공통 조건 충족
@@ -266,7 +285,7 @@ class LivePaymentGuardTest(_EnvCase):
 
     def test_api_orders_common_block_live_without_biz(self):
         import saju_bot
-        self._set_live_keys()  # 주소·전화 미설정 + 법적 고지 미확정
+        self._set_live_keys()  # 법적 고지 미확정으로 공통 차단(주소·전화는 확정 기본값)
         c = saju_bot.app.test_client()
         r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
         self.assertEqual(r.status_code, 503)

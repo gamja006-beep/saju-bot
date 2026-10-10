@@ -141,9 +141,11 @@ class LegalPagesTest(_EnvCase):
             self.assertIn("/static/home.css", body)
             self.assertNotIn("/static/app.css", body)
 
-    def test_home_footer_shows_pending_and_links(self):
+    def test_home_footer_shows_confirmed_business_info_and_links(self):
+        # 사업자 식별 정보(상호·대표자·등록번호·신고번호·주소·전화·이메일)가 모두 확정되어
+        # 홈 푸터에는 '입력 대기'가 남지 않는다. 미확정 문구는 법적 고지 페이지에만 남는다.
         body = self.c.get("/").get_data(as_text=True)
-        self.assertIn("입력 대기", body)
+        self.assertNotIn("입력 대기", body)
         for link in ('href="/terms"', 'href="/privacy"', 'href="/refund"'):
             self.assertIn(link, body)
         self.assertIn("알파랩", body)

@@ -117,16 +117,17 @@ def payments_enabled():
 def launch_blockers():
     """라이브(live) 결제를 열기 전 반드시 해소해야 하는 미확정 운영 항목.
 
-    - 사업장 주소 공개 표기: 현재 동·호수 없는 초안만 있으므로, 최종 공개 표기를
-      BIZ_ADDRESS 로 명시 설정하기 전에는 차단한다(기본 표시값 존재와 무관).
-    - 고객 문의 전화: 아직 미정이므로 BIZ_PHONE 설정 전에는 차단한다.
+    - 사업장 주소 공개 표기·고객 문의 전화: 운영자가 확정한 값(business_info 기본값 또는
+      BIZ_* 환경변수 재정의)이 있으면 통과한다. 값이 비면 차단한다.
+    - 법적 고지(약관·개인정보·환불)에 미확정('입력 대기') 문구가 남아 있으면 차단한다.
     비대면 이메일 운영은 유지하며, 전화·화상 상담 기능을 요구하지는 않는다(연락 수단 표기만).
     반환: 미확정 사유 문자열 리스트(없으면 빈 리스트).
     """
+    info = legal_pages.business_info()
     reasons = []
-    if not _env("BIZ_ADDRESS"):
+    if not str(info.get("address") or "").strip():
         reasons.append("사업장 주소 공개 표기 미확정(BIZ_ADDRESS)")
-    if not _env("BIZ_PHONE"):
+    if not str(info.get("phone") or "").strip():
         reasons.append("고객 문의 전화 미정(BIZ_PHONE)")
     if legal_pages.any_pending():
         reasons.append("법적 고지(약관·개인정보·환불) 미확정 문구 존재")
