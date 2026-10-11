@@ -132,14 +132,17 @@ class CanonicalRedirectTest(_EnvCase):
 
 
 class LegalPagesTest(_EnvCase):
-    def test_pages_ok_with_draft_notice_and_pending(self):
+    def test_legal_pages_render_and_pending_only_in_privacy(self):
         for path in ("/terms", "/privacy", "/refund"):
             r = self.c.get(path)
             self.assertEqual(r.status_code, 200, path)
             body = r.get_data(as_text=True)
-            self.assertIn("입력 대기", body, path)
             self.assertIn("/static/home.css", body)
             self.assertNotIn("/static/app.css", body)
+        # 완성된 약관·환불에는 '입력 대기'가 없고, 미확정 2건이 남은 개인정보처리방침에만 남는다.
+        self.assertNotIn("입력 대기", self.c.get("/terms").get_data(as_text=True))
+        self.assertNotIn("입력 대기", self.c.get("/refund").get_data(as_text=True))
+        self.assertIn("입력 대기", self.c.get("/privacy").get_data(as_text=True))
 
     def test_home_footer_shows_confirmed_business_info_and_links(self):
         # 사업자 식별 정보(상호·대표자·등록번호·신고번호·주소·전화·이메일)가 모두 확정되어
@@ -159,11 +162,11 @@ class LegalPagesTest(_EnvCase):
         self.assertIn("&lt;script&gt;", body)
 
     def test_confirmed_reg_no_shown_and_no_invented_mail_order_no(self):
-        # 사업자등록번호는 확정값(564-05-02583)으로 표기하되, 통신판매업 신고 상태·주소 등
-        # 미확정 항목은 '입력 대기'로 남기고 환불 '일절 불가' 문구는 쓰지 않는다.
+        # 사업자등록번호는 확정값(564-05-02583)으로 표기한다. 환불 문안은 완성되어
+        # '입력 대기'가 없고, '일절/무조건 환불 불가' 문구는 쓰지 않는다.
         body = self.c.get("/refund").get_data(as_text=True)
         self.assertIn("564-05-02583", body)
-        self.assertIn("입력 대기", body)
+        self.assertNotIn("입력 대기", body)
         self.assertNotIn("무조건 환불 불가", body)
         self.assertNotIn("환불이 불가능", body)
 

@@ -13,7 +13,7 @@
     </header>
     <main>
       <h1>{{ doc.title }}</h1>
-      <p class="legal-notice">{{ doc.notice }}</p>
+      {% if doc.notice %}<p class="legal-notice">{{ doc.notice }}</p>{% endif %}
       {% for s in doc.sections %}
       <section class="legal-sec">
         <h2>{{ s.h }}</h2>
