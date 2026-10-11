@@ -1087,6 +1087,72 @@ class FreeResultUITest(unittest.TestCase):
             self.assertNotIn(bad, js)
 
 
+class FreeToPaidUpsellTest(unittest.TestCase):
+    """무료 결과 끝의 전환 안내(예시 질문 + BASIC/DEEP 비교). 정적 문자열·구조 검증."""
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_upsell_sections_present(self):
+        js = self._read("static/app.js")
+        for t in ["여기까지 무료로 확인했어요", "보고서에서 더 살펴볼 수 있는 질문",
+                  "buildUpsellArea", "topicQuestions"]:
+            self.assertIn(t, js)
+        # 무료 결과 렌더 마지막에 전환 안내를 덧붙인다(기존 공유/명식 유지).
+        self.assertIn("box.appendChild(buildUpsellArea(ins));", js)
+
+    def test_example_questions_marked_as_scope_not_personalized(self):
+        js = self._read("static/app.js")
+        # 이미 개인별로 심층 분석한 결과처럼 표현하지 않음을 분명히 한다.
+        self.assertIn("아직 개인별로 분석한 답이 아니에요", js)
+        self.assertIn("보고서에서 다루는 범위를 보여 주는 예시", js)
+
+    def test_compare_cards_have_select_buttons(self):
+        js = self._read("static/app.js")
+        self.assertIn("기본 해석 선택", js)
+        self.assertIn("심층 보고서 선택", js)
+
+    def test_select_routes_through_existing_product_step_not_bypass(self):
+        js = self._read("static/app.js")
+        # '선택'은 기존 상품 선택 단계(7)로 이동하고, 결제/동의를 건너뛰지 않는다.
+        self.assertIn("function selectProductAndGo", js)
+        self.assertIn("show(7)", js)
+        self.assertNotIn("startPayment()", js[js.index("function selectProductAndGo"):
+                                              js.index("function cmpCard")])
+        # 결제 직전 국외이전 동의·확인 단계는 그대로 유지된다(회귀 가드).
+        self.assertIn("agree-cross-border", js)
+        self.assertIn("renderConfirm", js)
+
+    def test_compare_eta_uses_server_single_source(self):
+        js = self._read("static/app.js")
+        # 전달기한은 서버 확정값(deliveryEtas)만 사용하고, 없으면 임의 확정 없이 '주문 시 안내'.
+        seg = js[js.index("function cmpEta"):js.index("function selectProductAndGo")]
+        self.assertIn("deliveryEtas", seg)
+        self.assertIn("주문 시 안내", seg)
+
+    def test_no_forbidden_marketing_claims(self):
+        js = self._read("static/app.js")
+        for bad in ["마감 임박", "할인", "숨겨진 운명", "100% 정확", "정확도 100",
+                    "전문가 검수 완료", "검수 완료", "오늘만", "지금 결제하면"]:
+            self.assertNotIn(bad, js)
+
+    def test_held_products_not_orderable_in_comparison(self):
+        js = self._read("static/app.js")
+        # 보류(현재 신청 불가) 상품은 비교 카드에서도 선택 가능해 보이지 않게 비활성화한다.
+        seg = js[js.index("function cmpCard"):js.index("function buildUpsellArea")]
+        self.assertIn("isHeldLive(pr.id)", seg)
+        self.assertIn("현재 신청 불가", seg)
+
+    def test_upsell_styles_in_customer_stylesheet(self):
+        # index.html 은 home.css 만 불러오므로, 비교/질문 스타일은 home.css 에 있어야 한다.
+        html = self._read("templates/index.html")
+        self.assertIn("/static/home.css", html)
+        self.assertNotIn("/static/app.css", html)
+        css = self._read("static/home.css")
+        for cls in [".fr-upsell", ".fr-q", ".cmp ", ".cmp-card", ".cmp-deep", ".cmp-btn"]:
+            self.assertIn(cls, css)
+
+
 class ProductDisplayTest(unittest.TestCase):
     def _read(self, rel):
         with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:

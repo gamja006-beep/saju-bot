@@ -293,6 +293,7 @@ function renderFreeResult(saju, ins) {
   box.appendChild(el("p", "fr-note", ins.element_note));
 
   box.appendChild(buildShareArea(ins));
+  box.appendChild(buildUpsellArea(ins));
   box.appendChild(el("p", "fr-disclaimer", ins.disclaimer));
 }
 
@@ -445,6 +446,106 @@ function buildShareArea(ins) {
   st.id = "share-status";
   st.setAttribute("aria-live", "polite");
   wrap.appendChild(st);
+  return wrap;
+}
+
+// ---- 무료 → 유료 전환 안내(상품 범위 예시 질문 + BASIC/DEEP 비교) ----
+// 고객이 고른 관심 주제를 보고서의 '실제 제공 범위'와 연결해 보여 준다. 확정적 예언·불안 조장
+// 없이, 아직 개인별로 분석한 결과가 아니라 '보고서에서 다루는 범위 예시'임을 분명히 한다.
+var TOPIC_PHRASE = {
+  "재물": "재물·돈 관리", "직업": "일·직업", "애정": "애정·관계",
+  "건강": "건강·생활 리듬", "학업": "학업·공부", "가족": "가족 관계"
+};
+function dominantElement(ins) {
+  var e = ins.elements || {};
+  var order = ["목", "화", "토", "금", "수"];
+  var best = order[0], max = -1;
+  order.forEach(function (k) { if ((e[k] || 0) > max) { max = e[k] || 0; best = k; } });
+  return best;
+}
+function topicQuestions(ins) {
+  var elm = dominantElement(ins);
+  var topics = topicsSelected();
+  var qs = [];
+  if (topics.length) {
+    var p0 = TOPIC_PHRASE[topics[0]] || topics[0];
+    qs.push(elm + " 기운이 두드러진다는 설명이 제 " + p0 + "에는 어떻게 연결될까요?");
+    var p1 = topics.length > 1 ? (TOPIC_PHRASE[topics[1]] || topics[1]) : p0;
+    qs.push("강점으로 나온 성향을 " + p1 + "에서 어떻게 살리면 좋을까요?");
+    if (topics.length > 2) {
+      var p2 = TOPIC_PHRASE[topics[2]] || topics[2];
+      qs.push("조심하면 좋은 점이 " + p2 + "에서는 어떻게 나타날 수 있을까요?");
+    }
+  } else {
+    qs.push(elm + " 기운이 두드러진다는 설명이 제 일과 관계에는 어떻게 연결될까요?");
+    qs.push("강점과 조심할 점을 일상에서 어떻게 적용하면 좋을까요?");
+  }
+  return qs.slice(0, 3);
+}
+// 비교 카드 전달기한: 서버가 확정한 값(deliveryEtas)만 쓴다. 환경변수(기한)가 없으면
+// 날짜를 임의로 확정해 표시하지 않고 '주문 시 안내'로 둔다.
+function cmpEta(pr) {
+  var map = (window.PAY_CONFIG && window.PAY_CONFIG.deliveryEtas) || {};
+  return map[PRODUCT_CODE[pr.id]] || "주문 시 안내";
+}
+// 비교 카드의 '선택' → 기존 상품 선택 단계(7)로 이동한다. 이메일 확인·국외이전 동의·
+// 결제 직전 확인 단계를 건너뛰지 않는다(선택값과 입력은 그대로 유지).
+function selectProductAndGo(id) {
+  selectedProduct = id;
+  started = true;
+  show(7);
+}
+function cmpCard(pr, cls, scope, selectLabel) {
+  var card = el("div", "cmp-card " + cls);
+  var head = el("div", "cmp-head");
+  head.appendChild(el("span", "cmp-name", pr.name));
+  head.appendChild(el("span", "cmp-price", pr.price));
+  card.appendChild(head);
+  card.appendChild(el("div", "cmp-eta", "예상 전달: " + cmpEta(pr)));
+  var ul = el("ul", "cmp-scope");
+  scope.forEach(function (s) { ul.appendChild(el("li", null, s)); });
+  card.appendChild(ul);
+  card.appendChild(el("p", "cmp-note", DELIVERY_NOTE));
+  var btn = el("button", "btn primary cmp-btn", selectLabel);
+  btn.type = "button";
+  if (isHeldLive(pr.id)) {  // 보류(현재 신청 불가) 상품은 선택 가능해 보이지 않게 비활성화
+    btn.disabled = true;
+    btn.textContent = "현재 신청 불가";
+  } else {
+    btn.addEventListener("click", function () { selectProductAndGo(pr.id); });
+  }
+  card.appendChild(btn);
+  return card;
+}
+function buildUpsellArea(ins) {
+  var wrap = el("div", "fr-upsell");
+  wrap.appendChild(el("h4", "fr-upsell-title", "여기까지 무료로 확인했어요"));
+  wrap.appendChild(el("p", "fr-note",
+    "무료 요약은 여기까지예요. 아래는 유료 보고서에서 더 깊이 다루는 범위와 예시 질문이에요."));
+
+  wrap.appendChild(el("h4", "fr-h", "보고서에서 더 살펴볼 수 있는 질문"));
+  var qul = el("ul", "fr-q");
+  topicQuestions(ins).forEach(function (q) { qul.appendChild(el("li", null, q)); });
+  wrap.appendChild(qul);
+  wrap.appendChild(el("p", "fr-note",
+    "위 질문은 보고서에서 다루는 범위를 보여 주는 예시예요. 아직 개인별로 분석한 답이 아니에요."));
+
+  var cmp = el("div", "cmp");
+  cmp.appendChild(cmpCard(productById("basic_9900"), "cmp-basic", [
+    "명식(사주 네 기둥) 근거부터 차근차근 설명",
+    "타고난 성향과 강점 정리",
+    "관계·가족에서의 성향",
+    "오늘부터 해 볼 실천 제안",
+    "연도별 장기 운세는 이 상품 범위가 아니에요"
+  ], "기본 해석 선택"));
+  cmp.appendChild(cmpCard(productById("deep_39000"), "cmp-deep", [
+    "기본 해석을 모두 포함",
+    "고른 관심 주제별로 더 자세히 분석",
+    "직접 쓴 질문·현재 상황을 명식 근거와 연결해 설명",
+    "상황에 맞춘 구체적인 현실 적용 제안",
+    "기간을 적었다면 그 기간의 흐름도 함께(안 적으면 임의로 만들지 않아요)"
+  ], "심층 보고서 선택"));
+  wrap.appendChild(cmp);
   return wrap;
 }
 
