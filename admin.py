@@ -314,8 +314,9 @@ def _build_report_package(order, payload):
     if saju is not None:
         try:
             topics = payload.get("topics")
+            # 별칭(식별정보)은 외부 챗봇 자료에 넣지 않는다: alias 를 전달하지 않는다.
             insight = saju_insights.build_free_result(
-                saju, alias=payload.get("alias"),
+                saju, alias=None,
                 topics=topics if isinstance(topics, list) else [])
         except Exception:
             insight = None
@@ -326,9 +327,9 @@ def _build_report_package(order, payload):
     A("")
 
     # 1. 상담 기본정보
+    # 별칭·이메일·주문번호·결제정보 등 해석에 불필요한 식별정보는 넣지 않는다(외부 챗봇용).
     A("1. 상담 기본정보")
     A("- 상담 유형: " + _or_na(payload.get("consultation_type")))
-    A("- 상담 대상 또는 별칭: " + _or_na(payload.get("alias")))
     A("- 성별: " + _gender_label(payload, saju))
     topics = payload.get("topics")
     topics_txt = ", ".join([_txt(t) for t in topics if _txt(t)]) if isinstance(topics, list) else ""

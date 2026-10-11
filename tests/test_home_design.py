@@ -161,6 +161,19 @@ class LegalPagesTest(_EnvCase):
         self.assertNotIn("<script>alert(1)</script>", body)
         self.assertIn("&lt;script&gt;", body)
 
+    def test_privacy_reflects_officer_and_report_process(self):
+        body = self.c.get("/privacy").get_data(as_text=True)
+        # 확정된 개인정보 보호책임자·연락처
+        self.assertIn("오준영", body)
+        self.assertIn("wroklabs@gmail.com", body)
+        # 실제 운영: ChatGPT 초안 + 사람 검토, Gmail 직접 발송, 서버 자동호출 없음
+        self.assertIn("ChatGPT", body)
+        self.assertIn("Gmail", body)
+        self.assertIn("서버가 ChatGPT를 자동으로 호출하지는 않습니다", body)
+        # 국외 처리 세부 고지는 추정하지 않고 미확정으로 남긴다
+        self.assertIn("국외", body)
+        self.assertIn("입력 대기", body)
+
     def test_confirmed_reg_no_shown_and_no_invented_mail_order_no(self):
         # 사업자등록번호는 확정값(564-05-02583)으로 표기한다. 환불 문안은 완성되어
         # '입력 대기'가 없고, '일절/무조건 환불 불가' 문구는 쓰지 않는다.

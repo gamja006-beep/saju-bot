@@ -69,6 +69,22 @@ class AdminViewerTest(unittest.TestCase):
                           headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
         self.assertIn("절입", body)
 
+    def test_copy_package_includes_late_zi_boundary_note(self):
+        # 23시대(자시 경계) 출생 주문 → 관리자 생성자료에 자시(子時) 경고 포함.
+        oid = self._make_paid(payload={"consultation_type": "종합", "birth_date": "1990-05-15",
+                                       "birth_time": "23:30", "gender": "남",
+                                       "question": "?", "topics": ["직업"]})
+        body = self.c.get("/admin/orders/%s" % oid,
+                          headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("자시", body)
+
+    def test_admin_detail_no_store_and_noindex(self):
+        oid = self._make_paid()
+        r = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+        self.assertIn("noindex", r.headers.get("X-Robots-Tag", ""))
+
     # ---- 인증 ----
     def test_no_auth_401(self):
         r = self.c.get("/admin/orders")
@@ -328,10 +344,10 @@ class AdminViewerTest(unittest.TestCase):
     }
 
     def _report_text(self, oid):
-        """렌더된 상세 페이지에서 복사 대상(#report-package)의 평문만 추출."""
+        """렌더된 상세 페이지에서 복사 대상(#report-package, 편집 가능 textarea)의 평문만 추출."""
         import re
         body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
-        m = re.search(r'<pre id="report-package" hidden>(.*?)</pre>', body, re.DOTALL)
+        m = re.search(r'<textarea id="report-package"[^>]*>(.*?)</textarea>', body, re.DOTALL)
         self.assertIsNotNone(m, "report-package 영역이 없습니다")
         return m.group(1), body
 
@@ -381,15 +397,38 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn("재물", report)
 
     def test_report_missing_fields_marked_na_not_fabricated(self):
-        # 질문/현재상황/별칭/기간 미입력 -> '미입력', 임의 생성 금지.
+        # 질문/현재상황/기간 미입력 -> '미입력', 임의 생성 금지.
         payload = {"calendar": "solar", "birth_date": "1988-11-02", "gender": "여",
                    "birth_time": "09:05", "birth_time_status": "exact", "consultation_type": "집중"}
         oid = self._make_paid(payload=payload)
         report, _ = self._report_text(oid)
         self.assertIn("고객 질문: 미입력", report)
         self.assertIn("현재 상황: 미입력", report)
-        self.assertIn("상담 대상 또는 별칭: 미입력", report)
         self.assertIn("살펴볼 기간: 미입력", report)
+
+    def test_chatbot_copy_excludes_alias_but_keeps_interpretation_fields(self):
+        # 별칭(식별정보)은 외부 챗봇 복사 자료에서 제외한다. 해석에 필요한 정보는 유지.
+        payload = dict(self._FULL)  # alias="김복남"
+        oid = self._make_paid(payload=payload, pk="pk_alias")
+        report, _ = self._report_text(oid)
+        self.assertNotIn("김복남", report)                 # 별칭 값 미포함
+        self.assertNotIn("별칭", report)                   # 별칭 라벨도 제거
+        self.assertNotIn("상담 대상", report)
+        # 해석에 필요한 정보는 유지된다.
+        self.assertIn("상담 유형", report)
+        self.assertIn("관심 주제", report)
+        self.assertIn("올해 이직해도 될까요?", report)       # 질문(자유입력)은 유지(운영자 검토 대상)
+        self.assertIn("연주:", report)                      # 명식 8자
+
+    def test_free_text_review_notice_and_editable_source(self):
+        # 자유입력 식별정보 검토 안내 + 복사 전 수정 가능(편집 textarea).
+        oid = self._make_paid(payload=dict(self._FULL))
+        body = self.c.get("/admin/orders/%s" % oid, headers=_auth(_ADMIN_USER, _ADMIN_PW)).get_data(as_text=True)
+        self.assertIn("식별정보가 들어 있을 수 있습니다", body)
+        self.assertIn("자동 마스킹은 하지 않습니다", body)   # 완벽 마스킹을 주장하지 않음
+        self.assertIn("별칭은 이 자료에서 제외", body)
+        self.assertIn('<textarea id="report-package"', body)  # 복사 전 확인·수정 가능
+        self.assertIn("src.value", body)                      # 편집한 내용을 복사
 
     def test_report_compute_failure_is_safe(self):
         # 명식 계산에 필요한 입력이 없으면 내부 오류/비밀값 없이 안전 안내만 표시.
