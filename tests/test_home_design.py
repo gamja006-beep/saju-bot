@@ -166,12 +166,16 @@ class LegalPagesTest(_EnvCase):
         # 확정된 개인정보 보호책임자·연락처
         self.assertIn("오준영", body)
         self.assertIn("wroklabs@gmail.com", body)
-        # 실제 운영: ChatGPT 초안 + 사람 검토, Gmail 직접 발송, 서버 자동호출 없음
+        # 실제 운영: ChatGPT 초안 + 사람 검토, Gmail 직접 발송
         self.assertIn("ChatGPT", body)
         self.assertIn("Gmail", body)
-        self.assertIn("서버가 ChatGPT를 자동으로 호출하지는 않습니다", body)
-        # 국외 처리 세부 고지는 추정하지 않고 미확정으로 남긴다
-        self.assertIn("국외", body)
+        # 개인정보가 외부로 전달되며, 별칭을 뺐다고 익명이라 주장하지 않는다
+        self.assertIn("OpenAI로 전달됩니다", body)
+        self.assertIn("익명 정보가 아닙니다", body)
+        # '자동 호출 없음'이 '외부 전달 없음'으로 오해되지 않게 명시
+        self.assertIn("자동 호출 없음", body)
+        # 국외 이전은 법 근거를 밝히되 세부는 추정하지 않고 미확정으로 남긴다
+        self.assertIn("제28조의8", body)
         self.assertIn("입력 대기", body)
 
     def test_confirmed_reg_no_shown_and_no_invented_mail_order_no(self):
