@@ -1153,6 +1153,46 @@ class FreeToPaidUpsellTest(unittest.TestCase):
             self.assertIn(cls, css)
 
 
+class ReadabilityLayoutTest(unittest.TestCase):
+    """무료 결과·상품 비교·공유 카드 가독성(넓은 배치·컨테이너 기준 줄바꿈·제목 2줄)."""
+    def _read(self, rel):
+        with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:
+            return f.read()
+
+    def test_result_steps_widen_on_desktop(self):
+        js = self._read("static/app.js")
+        # 6·7단계에서만 넓은 배치 클래스를 토글한다(입력 단계는 그대로).
+        self.assertIn('classList.toggle("result-wide", current === 6 || current === 7)', js)
+        css = self._read("static/home.css")
+        self.assertIn(".hero.result-wide", css)
+        self.assertIn(".hero.result-wide .hero-form", css)
+        # 데스크톱 전용(min-width)로 넓히고, 입력 단계 2단 배치는 유지한다.
+        self.assertIn("min-width: 768px", css)
+
+    def test_compare_cards_wrap_by_container_and_no_midchar_break(self):
+        css = self._read("static/home.css")
+        # 컨테이너(.cmp) 폭 기준 줄바꿈(flex-wrap) + 좁으면 1열.
+        self.assertIn(".cmp { display: flex; flex-wrap: wrap;", css)
+        self.assertIn(".cmp-card { flex: 1 1 14rem;", css)
+        self.assertIn(".cmp-card { flex: 1 1 100%; }", css)  # 360px 이하 1열
+        # 글자 단위로 끊기지 않게: 한글 어절 유지 + 가격은 줄바꿈 금지.
+        self.assertIn("word-break: keep-all", css)
+        self.assertIn("white-space: nowrap", css)
+
+    def test_share_title_balanced_two_lines_no_lone_char(self):
+        js = self._read("static/app.js")
+        # 공백 분할 greedy wrapText 를 제거하고, 균형 2줄 분할로 대체한다.
+        self.assertNotIn("function wrapText", js)
+        self.assertIn("function titleLines", js)
+        self.assertIn("function drawTitle", js)
+        # 한 줄에 한 글자만 남기지 않는 제약이 있다.
+        self.assertIn("l1.length < 2 || l2.length < 2", js)
+        # 공백(어절) 경계를 우선 사용한다.
+        self.assertIn("spaceC.length ? spaceC : charC", js)
+        # 제목은 drawTitle 로 그린다(공유 카드).
+        self.assertIn("drawTitle(g, ins.persona_title", js)
+
+
 class ProductDisplayTest(unittest.TestCase):
     def _read(self, rel):
         with open(os.path.join(ROOT, rel), "r", encoding="utf-8") as f:

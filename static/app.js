@@ -300,18 +300,37 @@ function renderFreeResult(saju, ins) {
 // ---- 공유 카드 (Canvas, 외부 라이브러리 없음, 개인정보 미포함) ----
 function homepageUrl() { return window.location.origin; }
 
-function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
-  var words = String(text).split(" ");
-  var line = "";
-  var lines = [];
-  for (var i = 0; i < words.length; i++) {
-    var test = line ? line + " " + words[i] : words[i];
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line); line = words[i];
-    } else { line = test; }
+// 제목을 폭에 맞춰 최대 2줄로 균형 있게 나눈다. 한 줄에 한 글자만 남기지 않고,
+// 공백(어절) 경계를 우선 사용하되 없으면 글자 단위로 끊는다. 한 줄에 들어가면 1줄 그대로.
+function titleLines(ctx, text, maxWidth) {
+  text = String(text == null ? "" : text).replace(/\s+/g, " ").trim();
+  if (!text || ctx.measureText(text).width <= maxWidth) return [text];
+  var spaceC = [], charC = [];
+  for (var i = 1; i < text.length; i++) {
+    var l1 = text.slice(0, i).trim(), l2 = text.slice(i).trim();
+    if (l1.length < 2 || l2.length < 2) continue;              // 한 줄에 한 글자만 남기지 않음
+    var w1 = ctx.measureText(l1).width, w2 = ctx.measureText(l2).width;
+    if (w1 > maxWidth || w2 > maxWidth) continue;              // 각 줄이 폭을 넘지 않음
+    var cand = { l1: l1, l2: l2, diff: Math.abs(w1 - w2) };
+    if (text.charAt(i - 1) === " " || text.charAt(i) === " ") spaceC.push(cand);
+    else charC.push(cand);
   }
-  if (line) lines.push(line);
-  for (var j = 0; j < lines.length; j++) ctx.fillText(lines[j], x, y + j * lineHeight);
+  var pool = spaceC.length ? spaceC : charC;                   // 어절 경계 우선
+  if (!pool.length) {                                          // 2줄로 못 담으면 글자 단위 그리디
+    var cut = text.length;
+    for (var j = 1; j <= text.length; j++) {
+      if (ctx.measureText(text.slice(0, j)).width > maxWidth) { cut = j - 1; break; }
+    }
+    cut = Math.max(1, cut);
+    return [text.slice(0, cut), text.slice(cut)];
+  }
+  pool.sort(function (a, b) { return a.diff - b.diff; });      // 두 줄 폭이 가장 비슷한 분할
+  return [pool[0].l1, pool[0].l2];
+}
+function drawTitle(ctx, text, cx, maxWidth, centerY, lineHeight) {
+  var lines = titleLines(ctx, text, maxWidth);
+  var startY = centerY - (lines.length - 1) * lineHeight / 2;  // 줄 수에 맞춰 세로 중앙 배치
+  for (var i = 0; i < lines.length; i++) ctx.fillText(lines[i], cx, startY + i * lineHeight);
   return lines.length;
 }
 
@@ -332,7 +351,7 @@ function drawShareCard(ins) {
 
   g.fillStyle = "#ffffff";
   g.font = "800 56px -apple-system, 'Malgun Gothic', sans-serif";
-  wrapText(g, ins.persona_title, c.width / 2, 300, c.width - 120, 70);
+  drawTitle(g, ins.persona_title, c.width / 2, c.width - 120, 330, 70);
 
   var keywords = ins.keywords || [];
   var ky = 560;
@@ -829,6 +848,9 @@ function show(n) {
   stepLabel.textContent = current + " / " + TOTAL_STEPS;
   prevBtn.disabled = current === 1;
   nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
+  // 무료 결과(6)·상품 선택(7)은 데스크톱에서 넓고 중앙에 배치한다(입력 단계는 그대로).
+  var hero = document.querySelector(".hero");
+  if (hero) hero.classList.toggle("result-wide", current === 6 || current === 7);
   onEnter(current);
   if (started) {
     var heading = steps[current - 1].querySelector("h2");

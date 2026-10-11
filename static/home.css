@@ -45,6 +45,14 @@ a { color: inherit; }
 .app .top h2 { font-size: 1.3rem; margin: 0 0 .15rem; }
 .app .top .sub { margin: 0 0 .8rem; color: var(--muted); font-size: .85rem; }
 
+/* 무료 결과(6)·상품 선택(7): 데스크톱에서 좌측 소개글을 접고 넓고 중앙에 배치해 읽기 쉽게.
+   입력 단계(1~5)는 기존 2단 배치를 그대로 유지한다. */
+@media (min-width: 768px) {
+  .hero.result-wide { gap: 0; }
+  .hero.result-wide .hero-copy { display: none; }
+  .hero.result-wide .hero-form { flex: 1 1 100%; max-width: 860px; margin: 0 auto; }
+}
+
 /* 진행 표시 */
 .progress { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .progress-bar { height: 100%; width: 12.5%; background: var(--accent); transition: width .2s; }
@@ -171,18 +179,20 @@ table.pillars .ko { font-size: .8rem; color: var(--muted); }
 .fr-upsell-title { font-size: 1.1rem; color: var(--gold); margin: 0 0 .3rem; }
 .fr-q { margin: .3rem 0 .2rem; padding-left: 1.3rem; }
 .fr-q li { margin: .45rem 0; line-height: 1.6; }
+/* 카드는 '놓인 영역(.cmp)' 폭 기준으로 줄바꿈한다(flex-wrap). 좁으면 세로 1열로 쌓인다. */
 .cmp { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .8rem; }
-.cmp-card { flex: 1 1 11rem; display: flex; flex-direction: column;
-  border: 2px solid var(--line); border-radius: 16px; padding: .9rem 1rem; background: var(--card); }
+.cmp-card { flex: 1 1 14rem; display: flex; flex-direction: column;
+  border: 2px solid var(--line); border-radius: 16px; padding: .9rem 1rem; background: var(--card);
+  word-break: keep-all; overflow-wrap: break-word; }
 .cmp-card.cmp-deep { border-color: var(--accent); }
-.cmp-head { display: flex; align-items: baseline; gap: .5rem; }
-.cmp-name { font-size: 1.1rem; font-weight: 800; }
-.cmp-price { margin-left: auto; font-size: 1.1rem; font-weight: 700; color: var(--gold); }
+.cmp-head { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.cmp-name { font-size: 1.1rem; font-weight: 800; word-break: keep-all; }
+.cmp-price { margin-left: auto; font-size: 1.1rem; font-weight: 700; color: var(--gold); white-space: nowrap; }
 .cmp-eta { font-size: .85rem; color: var(--muted); margin: .3rem 0 .5rem; }
 .cmp-scope { margin: 0 0 .6rem; padding-left: 1.2rem; flex: 1; }
 .cmp-scope li { font-size: .9rem; line-height: 1.55; margin: .3rem 0; }
 .cmp-note { font-size: .78rem; color: var(--muted); margin: 0 0 .7rem; line-height: 1.5; }
-.cmp-btn { width: 100%; min-height: 52px; font-size: .95rem; }
+.cmp-btn { width: 100%; min-height: 52px; font-size: .95rem; word-break: keep-all; }
 
 /* 본문 섹션 */
 .block { border-top: 1px solid var(--line); padding: 3.2rem 0; }
