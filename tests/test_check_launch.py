@@ -41,11 +41,11 @@ def _fill_business(env):
     env["BIZ_EMAIL"] = "help@example.test"
 
 
-def _enable_payments(env):
+def _enable_payments(env, mode="test"):
     env["PAYMENTS_ENABLED"] = "true"
-    env["PAYMENT_MODE"] = "test"
-    env["TOSS_CLIENT_KEY"] = "test_ck_sampleclient"
-    env["TOSS_SECRET_KEY"] = "test_sk_SUPERSECRET_value_123"
+    env["PAYMENT_MODE"] = mode
+    env["TOSS_CLIENT_KEY"] = mode + "_ck_sampleclient"
+    env["TOSS_SECRET_KEY"] = mode + "_sk_SUPERSECRET_value_123"
     env["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
 
 
@@ -166,8 +166,9 @@ class DevEnvBlockersTest(_EnvCase):
 
 class AllPassTest(_EnvCase):
     def test_fully_configured_synthetic_has_no_blockers(self):
+        # '실제 유료 출시 준비 완료'는 live 모드 + 라이브 키일 때만 차단 0건이 된다.
         _fill_business(os.environ)
-        _enable_payments(os.environ)
+        _enable_payments(os.environ, "live")
         os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
         os.environ["PRODUCT_ETA_DAYS_DEEP"] = "5"
         clean_doc = {"sections": [{"h": "x", "p": ["확정된 문구"], "li": []}]}
@@ -177,6 +178,26 @@ class AllPassTest(_EnvCase):
         pending = [r for r in results if r["status"] == check_launch.PENDING]
         self.assertEqual(pending, [], pending)
         self.assertTrue(any(r["status"] == check_launch.HOLD for r in results))
+
+    def test_test_mode_valid_keys_not_launch_ready(self):
+        # PAYMENTS_ENABLED + 유효한 test 키라도 '실제 유료 출시 준비 완료'로 통과하지 않는다.
+        _enable_payments(os.environ, "test")
+        r = check_launch.check_payment_config()
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("테스트 모드", r["detail"])
+
+    def test_live_mode_matching_keys_is_launch_ready(self):
+        _enable_payments(os.environ, "live")
+        r = check_launch.check_payment_config()
+        self.assertEqual(r["status"], check_launch.PASS)
+
+    def test_live_mode_key_prefix_mismatch_blocks(self):
+        # live 모드인데 키 접두사가 test_ 면 혼용 차단은 유지된다.
+        _enable_payments(os.environ, "live")
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_wrongmode"
+        r = check_launch.check_payment_config()
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("접두사", r["detail"])
 
 
 class SafetyTest(_EnvCase):

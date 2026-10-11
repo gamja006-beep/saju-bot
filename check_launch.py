@@ -92,18 +92,26 @@ def check_held_products():
 
 
 def check_payment_config():
-    """결제 모드·키 조합. 비밀값은 읽지도 출력하지도 않고 상태 플래그만 쓴다."""
+    """결제 모드·키 조합(실제 유료 출시 기준). 비밀값은 읽지도 출력하지도 않고 상태 플래그만 쓴다.
+
+    실제 유료 출시 '통과'는 PAYMENT_MODE=live + 라이브 키 일치 + 활성화가 모두 충족될 때만이다.
+    PAYMENT_MODE=test 는 결제 연동 점검용 설정일 뿐, PAYMENTS_ENABLED·test 키가 유효해도
+    '실제 유료 출시 준비 완료'로 통과시키지 않는다(라이브 전환 전까지 미완료로 둔다)."""
     st = payments.config_status()  # enabled/mode/has_keys/keys_match_mode (값 비노출)
-    ok = bool(st.get("enabled"))
+    enabled = bool(st.get("enabled"))
+    is_live = st.get("mode") == "live"
+    ok = enabled and is_live
     reasons = []
     if not st.get("has_keys"):
         reasons.append("키 미설정(TOSS_CLIENT_KEY/TOSS_SECRET_KEY/ORDER_ENCRYPTION_KEY)")
     if not st.get("keys_match_mode"):
         reasons.append("키 접두사가 PAYMENT_MODE 와 불일치(test_/live_)")
-    if not ok and not reasons:
+    if not enabled and not reasons:
         reasons.append("PAYMENTS_ENABLED 미설정")
+    if enabled and not is_live:
+        reasons.append("테스트 모드(PAYMENT_MODE=test) — 실제 유료 출시는 live 모드 필요")
     detail = "" if ok else "; ".join(reasons)
-    return _result("payment", "결제 모드·키 조합", ok, detail)
+    return _result("payment", "결제 모드·키 조합(실제 유료 출시)", ok, detail)
 
 
 def run_checks(info=None, env=None):
