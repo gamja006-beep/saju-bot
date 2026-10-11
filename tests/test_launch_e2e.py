@@ -101,7 +101,8 @@ class LaunchE2ETest(unittest.TestCase):
             "product_code": code, "email": email,
             "calendar": "solar", "birth_date": "1990-05-15", "birth_time": "08:30",
             "gender": "남", "consultation_type": "종합",
-            "question": "올해 이직 적기?", "topics": ["직업", "재물"]})
+            "question": "올해 이직 적기?", "topics": ["직업", "재물"],
+            "agree_cross_border": True})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         body = r.get_json()
         self.assertEqual(body["status"], "ok")
@@ -210,6 +211,26 @@ class LaunchE2ETest(unittest.TestCase):
     def test_free_product_cannot_be_ordered(self):
         r = self.c.post("/api/orders", json={"product_code": "FREE", "email": "x@example.test"})
         self.assertEqual(r.status_code, 400)
+
+    # --- 국외 이전 동의: 결제 전 동의가 암호화 저장되고, UI/고지에 반영된다 ---
+    def test_cross_border_consent_recorded_in_payload(self):
+        oid, _ = self._create_order("BASIC", "consent@example.test")
+        payload = admin._decrypt_payload(self.store, oid)
+        self.assertIs(payload.get("agree_cross_border"), True)
+
+    def test_order_flow_ui_and_privacy_disclose_cross_border(self):
+        with open(os.path.join(ROOT, "static", "app.js"), "r", encoding="utf-8") as f:
+            js = f.read()
+        # 결제 직전 동의 체크박스와 개인정보처리방침 링크, 동의 전 버튼 비활성화 처리
+        self.assertIn("agree-cross-border", js)
+        self.assertIn("agree_cross_border", js)
+        self.assertIn("/privacy", js)
+        # 개인정보처리방침이 받는 자·국가를 공식 사실로 밝히고, 미확정은 보유기간만 남긴다
+        body = self.c.get("/privacy").get_data(as_text=True)
+        self.assertIn("OpenAI OpCo, LLC", body)
+        self.assertIn("Google LLC", body)
+        self.assertIn("제28조의8", body)
+        self.assertIn("입력 대기", body)  # 보유·이용 기간/모델 학습 이용만 미확정으로 남음
 
     # --- 모바일 뷰포트: 결제 성공 페이지가 모바일 대응 ---
     def test_success_page_mobile_viewport(self):

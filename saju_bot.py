@@ -285,6 +285,9 @@ def _consultation_payload(data):
         "question": _clean_text(data.get("question"), 2000),
         "situation": _clean_text(data.get("situation"), 2000),
         "target_period": _clean_text(data.get("target_period"), 100),
+        # 국외 이전(OpenAI·Google) 동의 기록. 보고서 작성·발송은 국외 이전을 수반하므로
+        # 결제 전 고객 동의를 받아 함께 암호화 저장한다(감사 추적용).
+        "agree_cross_border": data.get("agree_cross_border") is True,
     }
 
 
@@ -305,6 +308,13 @@ def api_orders():
         if payments.product_live_blocked(data.get("product_code") or ""):
             return jsonify({"status": "error", "code": "product_unavailable",
                             "message": "선택하신 상품은 현재 판매 준비 중입니다."}), 503
+        # 국외 이전(OpenAI·Google) 별도 동의 가드: 보고서 작성·발송은 개인정보 국외 이전을
+        # 수반하므로, 라이브 주문은 결제 전 고객의 명시적 동의 없이는 접수하지 않는다. 동의
+        # 표시(체크)만으로 국외이전 고지 요건이 끝났다고 보지 않으며, 고지 미확정 시에는 위
+        # live_payments_ready() 공통 가드가 먼저 라이브를 차단한다.
+        if data.get("agree_cross_border") is not True:
+            return jsonify({"status": "error", "code": "consent_required",
+                            "message": "보고서 작성·발송을 위한 개인정보 국외 이전 동의가 필요합니다."}), 400
     try:
         result = payments.create_order(
             ORDER_STORE,

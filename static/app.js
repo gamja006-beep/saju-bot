@@ -573,10 +573,21 @@ function renderConfirm() {
     } else if (payCfg.enabled) {
       var banner = payCfg.mode !== "live"
         ? "<p class=\"paid-notice\">테스트 결제입니다. 실제 금액은 차감되지 않습니다.</p>" : "";
-      area.innerHTML = banner +
-        "<button type=\"button\" id=\"test-pay\" class=\"btn primary\">테스트 결제하기</button>" +
+      // 국외 이전(OpenAI·Google) 별도 동의: 보고서 작성·발송은 개인정보 국외 이전을 수반하므로
+      // 결제 전 동의를 받고, 동의 전에는 결제 버튼을 비활성화한다(라이브 서버도 동의 없으면 거부).
+      var consent =
+        "<label class=\"consent-box\"><input type=\"checkbox\" id=\"agree-cross-border\"> " +
+        "<span>[필수] 보고서 작성·발송을 위해 생년월일·질문 등 개인정보가 " +
+        "OpenAI OpCo, LLC(미국)·Google LLC(미국 등)로 국외 이전되는 데 동의합니다. " +
+        "항목·목적·거부 방법은 <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">개인정보처리방침</a>을 " +
+        "확인하세요. 동의하지 않으면 유료 보고서를 진행할 수 없습니다.</span></label>";
+      area.innerHTML = banner + consent +
+        "<button type=\"button\" id=\"test-pay\" class=\"btn primary\" disabled>테스트 결제하기</button>" +
         "<span id=\"pay-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
-      document.getElementById("test-pay").addEventListener("click", startPayment);
+      var agree = document.getElementById("agree-cross-border");
+      var payBtn = document.getElementById("test-pay");
+      agree.addEventListener("change", function () { payBtn.disabled = !agree.checked; });
+      payBtn.addEventListener("click", startPayment);
     } else {
       area.innerHTML = "<p class=\"paid-notice\">현재 결제 기능 준비 중이며 아직 주문이 접수되지 않습니다.</p>" +
         "<button type=\"button\" class=\"btn primary\" disabled>결제 기능 준비 중</button>";
@@ -599,6 +610,8 @@ function orderPayload() {
   p.question = val("question");
   p.situation = val("situation");
   p.target_period = val("target_period");
+  var agree = document.getElementById("agree-cross-border");
+  p.agree_cross_border = !!(agree && agree.checked);  // 국외 이전 동의 여부
   return p;
 }
 
@@ -614,6 +627,11 @@ function logPayError(e) {
 function startPayment() {
   if (isHeldLive(selectedProduct)) { return; }  // 방어적 차단(버튼은 이미 비활성)
   var status = document.getElementById("pay-status");
+  var agree = document.getElementById("agree-cross-border");
+  if (agree && !agree.checked) {  // 방어적 차단(버튼은 이미 비활성)
+    status.textContent = "개인정보 국외 이전 동의가 필요합니다.";
+    return;
+  }
   status.textContent = "주문 생성 중...";
   fetchJSON("/api/orders", orderPayload()).then(function (res) {
     if (!res.ok || res.body.status !== "ok") {

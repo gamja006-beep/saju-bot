@@ -26,6 +26,7 @@ import payments
 PASS = "통과"
 PENDING = "미완료"
 HOLD = "보류"  # 의도적으로 보류 중인 상품(출시 차단 건수에 넣지 않음)
+INFO = "안내"  # 정보성 점검(출시 차단 건수에 넣지 않음). 실제 차단은 관련 PENDING 항목이 담당한다.
 
 
 def _result(key, label, ok, detail=""):
@@ -91,6 +92,27 @@ def check_held_products():
     return {"key": "held_products", "label": "보류 상품(1차 출시 제외)", "status": HOLD, "detail": detail}
 
 
+def check_cross_border_transfer():
+    """국외 이전 고지·동의 현황(정보성). 실제 출시 차단은 '법적 고지 미확정 문구'(PENDING)와
+    라이브 공통 가드가 담당하므로, 이 항목은 차단 건수에 넣지 않고 상태만 요약한다.
+
+    - 받는 자·국가·항목·목적·시기·방법·거부 방법은 공식 자료/실제 처리 흐름으로 확인됨.
+    - 유료 결제 전 고객 국외이전 동의를 라이브 주문에서 서버가 강제한다(동의 없으면 거부).
+    - 남은 확정: 보유·이용 기간과 모델 학습 이용 여부(운영자 OpenAI·Google 계정 설정).
+      확정 전까지는 개인정보처리방침에 미확정 문구가 남아 라이브가 계속 차단된다.
+    동의 버튼 추가만으로 '해결'로 표시하지 않는다(미확정 고지는 그대로 차단 사유로 남는다)."""
+    recips = "; ".join("%s(%s)" % (name, country)
+                       for name, country, _ in legal_pages.CROSS_BORDER_RECIPIENTS)
+    if legal_pages.cross_border_pending():
+        detail = ("받는 자·국가 확인됨(%s). 항목·목적·시기·방법·거부방법 고지 완료, "
+                  "라이브 주문에서 국외이전 동의 강제. 남은 확정: 보유·이용 기간/모델 학습 이용 "
+                  "여부(운영자 계정 설정) — 확정 전까지 법적 고지 미확정으로 라이브 차단 유지." % recips)
+    else:
+        detail = ("받는 자·국가(%s)·항목·목적·시기·방법·거부방법·보유기간 고지 확정, "
+                  "라이브 주문에서 국외이전 동의 강제." % recips)
+    return {"key": "cross_border", "label": "국외 이전 고지·동의", "status": INFO, "detail": detail}
+
+
 def check_payment_config():
     """결제 모드·키 조합(실제 유료 출시 기준). 비밀값은 읽지도 출력하지도 않고 상태 플래그만 쓴다.
 
@@ -122,6 +144,7 @@ def run_checks(info=None, env=None):
         check_business_info(info, env),
         check_contact(info, env),
         check_legal_pending(),
+        check_cross_border_transfer(),  # 정보성(안내) — 실제 차단은 check_legal_pending 이 담당
         check_launch_products(),
         check_payment_config(),
         check_held_products(),  # 정보성(보류) — 출시 차단 건수에 포함하지 않음
@@ -129,7 +152,7 @@ def run_checks(info=None, env=None):
 
 
 def format_report(results):
-    marks = {PASS: "[O]", PENDING: "[ ]", HOLD: "[~]"}
+    marks = {PASS: "[O]", PENDING: "[ ]", HOLD: "[~]", INFO: "[i]"}
     lines = ["== 출시 전 점검 (읽기 전용) =="]
     for r in results:
         line = "%s %s: %s" % (marks.get(r["status"], "[ ]"), r["label"], r["status"])

@@ -146,6 +146,24 @@ class RealArtifactsTest(_EnvCase):
     def test_real_legal_pages_have_pending_markers(self):
         self.assertEqual(check_launch.check_legal_pending()["status"], check_launch.PENDING)
 
+    def test_cross_border_check_is_informational_not_a_blocker(self):
+        r = check_launch.check_cross_border_transfer()
+        # 정보성(INFO) — 출시 차단 건수에 넣지 않는다(실제 차단은 법적 고지 미확정이 담당).
+        self.assertEqual(r["status"], check_launch.INFO)
+        # 공식 자료로 확인된 받는 자가 안내에 드러난다.
+        self.assertIn("OpenAI OpCo, LLC", r["detail"])
+        self.assertIn("Google LLC", r["detail"])
+        # 남은 확정 항목(보유기간/모델 학습)을 미확정으로 명시하되 '해결'로 단정하지 않는다.
+        self.assertIn("보유", r["detail"])
+
+    def test_cross_border_not_counted_in_launch_blockers(self):
+        # run_checks 에 정보성 국외이전 항목이 포함되지만 차단 건수(PENDING)에는 들어가지 않는다.
+        results = check_launch.run_checks()
+        keys = {r["key"] for r in results}
+        self.assertIn("cross_border", keys)
+        blockers = [r["key"] for r in results if r["status"] == check_launch.PENDING]
+        self.assertNotIn("cross_border", blockers)
+
 
 class DevEnvBlockersTest(_EnvCase):
     def test_empty_env_reports_blockers_and_exit_1(self):
@@ -342,9 +360,24 @@ class LivePaymentGuardTest(_EnvCase):
         saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
         c = saju_bot.app.test_client()
         with mock.patch.object(legal_pages, "any_pending", return_value=False):
-            r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
+            r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test",
+                                            "agree_cross_border": True})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json().get("status"), "ok")
+
+    def test_api_orders_live_blocked_without_cross_border_consent(self):
+        # 라이브 공통·상품·전달기한 가드를 모두 통과해도, 국외 이전 동의가 없으면 거부한다.
+        import saju_bot
+        self._set_live_keys()
+        self._set_biz()
+        os.environ["PRODUCT_ETA_DAYS_BASIC"] = "3"
+        saju_bot.ORDER_STORE = payments.InMemoryOrderStore()
+        c = saju_bot.app.test_client()
+        with mock.patch.object(legal_pages, "any_pending", return_value=False):
+            r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json().get("code"), "consent_required")
+        self.assertEqual(saju_bot.ORDER_STORE.calls, 0)  # 동의 없으면 주문을 만들지 않는다
 
     def test_api_orders_test_mode_allows_hold_product(self):
         # test 모드는 상품별 가드를 적용하지 않는다(합성 테스트 흐름 유지).
