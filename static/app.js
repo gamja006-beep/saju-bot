@@ -579,7 +579,7 @@ function renderConfirm() {
         "<label class=\"consent-box\"><input type=\"checkbox\" id=\"agree-cross-border\"> " +
         "<span>[필수] 보고서 작성·발송을 위해 생년월일·질문 등 개인정보가 " +
         "OpenAI OpCo, LLC(미국)·Google LLC(미국 등)로 국외 이전되는 데 동의합니다. " +
-        "항목·목적·거부 방법은 <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">개인정보처리방침</a>을 " +
+        "항목·목적·시기·방법·보유·거부 방법은 <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">개인정보처리방침</a>을 " +
         "확인하세요. 동의하지 않으면 유료 보고서를 진행할 수 없습니다.</span></label>";
       area.innerHTML = banner + consent +
         "<button type=\"button\" id=\"test-pay\" class=\"btn primary\" disabled>테스트 결제하기</button>" +

@@ -230,7 +230,8 @@ class LaunchE2ETest(unittest.TestCase):
         self.assertIn("OpenAI OpCo, LLC", body)
         self.assertIn("Google LLC", body)
         self.assertIn("제28조의8", body)
-        self.assertIn("입력 대기", body)  # 보유·이용 기간/모델 학습 이용만 미확정으로 남음
+        # 보유·이용은 각 사업자 공식 방침을 반영하고, 미확정('입력 대기')은 남기지 않는다.
+        self.assertNotIn("입력 대기", body)
 
     # --- 모바일 뷰포트: 결제 성공 페이지가 모바일 대응 ---
     def test_success_page_mobile_viewport(self):

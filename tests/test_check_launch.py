@@ -143,8 +143,11 @@ class RealArtifactsTest(_EnvCase):
     def test_held_products_are_hold_not_launch_blocker(self):
         self.assertEqual(check_launch.check_held_products()["status"], check_launch.HOLD)
 
-    def test_real_legal_pages_have_pending_markers(self):
-        self.assertEqual(check_launch.check_legal_pending()["status"], check_launch.PENDING)
+    def test_real_legal_pages_have_no_pending_markers(self):
+        # 출시 준비 완료: 약관·개인정보·환불에 '입력 대기'(미확정)가 없다.
+        self.assertEqual(check_launch.check_legal_pending()["status"], check_launch.PASS)
+        self.assertFalse(legal_pages.any_pending())
+        self.assertFalse(legal_pages.cross_border_pending())
 
     def test_cross_border_check_is_informational_not_a_blocker(self):
         r = check_launch.check_cross_border_transfer()
@@ -172,8 +175,10 @@ class DevEnvBlockersTest(_EnvCase):
         # 사업자 표시·문의처는 운영자 확정 기본값으로 통과한다.
         self.assertEqual(by["business_info"], check_launch.PASS)
         self.assertEqual(by["contact"], check_launch.PASS)
-        # 결제·법적 고지·전달기한은 환경변수 미설정이라 여전히 미완료(차단).
-        for key in ("payment", "legal", "launch_products"):
+        # 법적 고지는 확정 완료로 통과한다(국외 이전 보유·이용 반영, '입력 대기' 없음).
+        self.assertEqual(by["legal"], check_launch.PASS)
+        # 결제·전달기한은 환경변수 미설정이라 여전히 미완료(차단).
+        for key in ("payment", "launch_products"):
             self.assertEqual(by[key], check_launch.PENDING, key)
         buf = io.StringIO()
         with redirect_stdout(buf):
@@ -263,31 +268,30 @@ class LivePaymentGuardTest(_EnvCase):
         os.environ["BIZ_ADDRESS"] = "경기도 고양시 덕양구 중앙로558번길 57 101동 101호"
         os.environ["BIZ_PHONE"] = "031-000-0000"
 
-    def test_launch_blockers_lists_legal_when_biz_confirmed(self):
-        # 주소·전화는 확정 기본값으로 통과하므로, 환경변수 미설정 상태에서도
-        # 공통 차단은 법적 고지 미확정뿐이다.
+    def test_launch_blockers_empty_when_biz_and_legal_confirmed(self):
+        # 주소·전화는 확정 기본값으로 통과하고, 법적 고지도 확정 완료되어 공통 차단이 없다.
         joined = " ".join(payments.launch_blockers())
         self.assertNotIn("BIZ_ADDRESS", joined)
         self.assertNotIn("BIZ_PHONE", joined)
-        self.assertIn("법적 고지", joined)  # 약관·개인정보·환불 미확정은 여전히 공통 차단
+        self.assertEqual(payments.launch_blockers(), [])
 
-    def test_launch_blockers_empty_only_when_biz_and_legal_resolved(self):
+    def test_launch_blockers_still_block_if_legal_regresses(self):
+        # 가드 자체는 유효하다: 법적 고지가 다시 미확정이 되면 공통 차단으로 돌아간다.
         self._set_biz()
-        self.assertIn("법적 고지", " ".join(payments.launch_blockers()))  # 법적 고지 미확정이면 여전히 차단
-        with mock.patch.object(legal_pages, "any_pending", return_value=False):
-            self.assertEqual(payments.launch_blockers(), [])
+        self.assertEqual(payments.launch_blockers(), [])  # 현재(확정 완료)는 공통 차단 없음
+        with mock.patch.object(legal_pages, "any_pending", return_value=True):
+            self.assertIn("법적 고지", " ".join(payments.launch_blockers()))
 
     def test_live_blocked_by_each_condition(self):
         self._set_live_keys()
         self.assertTrue(payments.payments_enabled())
-        # (1) 주소·전화는 확정 기본값으로 통과하나 법적 고지 미확정 → 차단
-        self.assertFalse(payments.live_payments_ready())
-        # (2) 주소·전화 환경변수까지 설정해도 법적 고지 미확정 → 여전히 차단
+        # (1) 주소·전화 확정 기본값 + 법적 고지 확정 완료 → 공통 조건 충족
+        self.assertTrue(payments.live_payments_ready())
         self._set_biz()
-        self.assertFalse(payments.live_payments_ready())
-        # (3) 법적 고지까지 해소 → 공통 조건 충족
-        with mock.patch.object(legal_pages, "any_pending", return_value=False):
-            self.assertTrue(payments.live_payments_ready())
+        self.assertTrue(payments.live_payments_ready())
+        # (2) 가드 유효성: 법적 고지가 다시 미확정이 되면 라이브 공통 차단으로 돌아간다
+        with mock.patch.object(legal_pages, "any_pending", return_value=True):
+            self.assertFalse(payments.live_payments_ready())
 
     def test_test_mode_not_blocked_by_guard(self):
         os.environ["PAYMENTS_ENABLED"] = "true"
@@ -322,11 +326,13 @@ class LivePaymentGuardTest(_EnvCase):
         self.assertIsNotNone(payments.product_live_blocked("BASIC"))
         self.assertIsNone(payments.product_delivery_eta("BASIC"))  # 확정 일수 없음
 
-    def test_api_orders_common_block_live_without_biz(self):
+    def test_api_orders_common_block_live_when_legal_incomplete(self):
+        # 공통 라이브 가드 유효성: 법적 고지가 미확정이면 상품 가드 이전에 라이브를 차단한다.
         import saju_bot
-        self._set_live_keys()  # 법적 고지 미확정으로 공통 차단(주소·전화는 확정 기본값)
+        self._set_live_keys()
         c = saju_bot.app.test_client()
-        r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
+        with mock.patch.object(legal_pages, "any_pending", return_value=True):
+            r = c.post("/api/orders", json={"product_code": "BASIC", "email": "x@example.test"})
         self.assertEqual(r.status_code, 503)
         self.assertEqual(r.get_json().get("code"), "launch_incomplete")
 
@@ -393,12 +399,14 @@ class LivePaymentGuardTest(_EnvCase):
         self.assertEqual(r.status_code, 200)
 
     def test_client_config_browser_disabled_live_until_ready(self):
-        self._set_live_keys()  # 공통 조건 미확정
-        self.assertFalse(payments.client_config()["enabled"])
-        self.assertEqual(payments.client_config()["clientKey"], "")
+        self._set_live_keys()
+        # 가드 유효성: 법적 고지가 미확정이면 브라우저 결제 설정이 비활성(키 비노출).
+        with mock.patch.object(legal_pages, "any_pending", return_value=True):
+            self.assertFalse(payments.client_config()["enabled"])
+            self.assertEqual(payments.client_config()["clientKey"], "")
+        # 확정 완료(현재 기본 상태) → 라이브 공통 조건 충족으로 활성.
         self._set_biz()
-        with mock.patch.object(legal_pages, "any_pending", return_value=False):
-            self.assertTrue(payments.client_config()["enabled"])
+        self.assertTrue(payments.client_config()["enabled"])
 
     def test_client_config_test_mode_enabled(self):
         os.environ["PAYMENTS_ENABLED"] = "true"

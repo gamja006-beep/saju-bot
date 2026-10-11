@@ -132,17 +132,17 @@ class CanonicalRedirectTest(_EnvCase):
 
 
 class LegalPagesTest(_EnvCase):
-    def test_legal_pages_render_and_pending_only_in_privacy(self):
+    def test_legal_pages_render_with_no_pending_markers(self):
         for path in ("/terms", "/privacy", "/refund"):
             r = self.c.get(path)
             self.assertEqual(r.status_code, 200, path)
             body = r.get_data(as_text=True)
             self.assertIn("/static/home.css", body)
             self.assertNotIn("/static/app.css", body)
-        # 완성된 약관·환불에는 '입력 대기'가 없고, 미확정 2건이 남은 개인정보처리방침에만 남는다.
-        self.assertNotIn("입력 대기", self.c.get("/terms").get_data(as_text=True))
-        self.assertNotIn("입력 대기", self.c.get("/refund").get_data(as_text=True))
-        self.assertIn("입력 대기", self.c.get("/privacy").get_data(as_text=True))
+        # 출시 준비 완료: 약관·개인정보·환불 모두 '입력 대기'(미확정)가 없다.
+        # 국외 이전 보유·이용은 각 사업자 공식 방침을 반영해 더 이상 미확정으로 두지 않는다.
+        for path in ("/terms", "/privacy", "/refund"):
+            self.assertNotIn("입력 대기", self.c.get(path).get_data(as_text=True))
 
     def test_home_footer_shows_confirmed_business_info_and_links(self):
         # 사업자 식별 정보(상호·대표자·등록번호·신고번호·주소·전화·이메일)가 모두 확정되어
@@ -174,9 +174,15 @@ class LegalPagesTest(_EnvCase):
         self.assertIn("익명 정보가 아닙니다", body)
         # '자동 호출 없음'이 '외부 전달 없음'으로 오해되지 않게 명시
         self.assertIn("자동 호출 없음", body)
-        # 국외 이전은 법 근거를 밝히되 세부는 추정하지 않고 미확정으로 남긴다
+        # 국외 이전은 법 근거(제28조의8)와 받는 자·국가를 공식 사실로 밝힌다.
         self.assertIn("제28조의8", body)
-        self.assertIn("입력 대기", body)
+        self.assertIn("OpenAI OpCo, LLC", body)
+        self.assertIn("Google LLC", body)
+        # 보유·이용은 각 사업자 공식 방침을 반영하되 '모델 개선 꺼짐'을 단정하지 않고,
+        # 고정 보유일·자동 삭제를 약속하지 않는다(미확정 문구도 남기지 않는다).
+        self.assertIn("모델 개선에 이용될 수 있", body)
+        self.assertIn("그 이용이 꺼져 있다고 단정하지 않", body)
+        self.assertNotIn("입력 대기", body)
 
     def test_confirmed_reg_no_shown_and_no_invented_mail_order_no(self):
         # 사업자등록번호는 확정값(564-05-02583)으로 표기한다. 환불 문안은 완성되어
