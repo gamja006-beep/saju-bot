@@ -31,55 +31,42 @@ a { color: inherit; }
 .text-toggle[aria-pressed="true"] { background: var(--gold); border-color: var(--gold); color: var(--accent-ink); font-weight: 700; }
 
 /* 히어로 */
-.hero { display: flex; flex-wrap: wrap; gap: 2.5rem; align-items: flex-start; padding: 1.5rem 0 3.5rem; }
-.hero-copy { flex: 1 1 420px; min-width: 0; }
+.hero { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; padding: 1.5rem 0 3.5rem; }
+.hero-copy { flex: 1 1 360px; min-width: 0; padding: .5rem 0; }
 .hero-copy h1 { font-size: 2rem; margin-bottom: .6em; word-break: keep-all; }
-@media (min-width: 768px) { .hero-copy h1 { font-size: 2.6rem; } }
+@media (min-width: 768px) { .hero-copy h1 { font-size: 2.2rem; } }
 .hero-lead { font-size: 1.1rem; color: var(--muted); }
-.hero-kicker { display: inline-block; padding: .25rem .7rem; margin: 0 0 1.2rem;
-  border: 1px solid #8E7541; border-radius: 999px; color: var(--gold); font-size: .8rem; font-weight: 700; }
-.saju-mark { display: flex; align-items: center; gap: .7rem; width: fit-content; margin-bottom: 1rem; color: var(--gold); }
-.saju-mark svg { width: 7rem; height: auto; flex: none; }
-.saju-mark span { font-size: .8rem; letter-spacing: .12em; }
-.hero-preview { margin: 1.4rem 0 .8rem; padding: 1rem 1.1rem;
-  background: #21253A; border-left: 4px solid var(--gold); border-radius: 0 14px 14px 0; }
+.hero-preview { margin: 1.4rem 0 .8rem; padding: 1rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
 .hero-preview-label { color: var(--gold); font-size: .85rem; font-weight: 700; margin-bottom: .3rem; }
 .hero-preview p:last-child { margin: 0; word-break: keep-all; }
+.pillar-preview { display: flex; gap: .45rem; margin: .65rem 0; }
+.pillar-preview span { flex: 1; padding: .35rem .1rem; text-align: center; color: var(--gold);
+  border: 1px solid #8E7541; border-radius: 8px; font-family: "Noto Serif KR", "Batang", serif;
+  font-size: 1rem; line-height: 1.5; }
 .hero-footnote, .hero-delivery { color: var(--muted); font-size: .85rem; line-height: 1.6; }
 .hero-footnote { margin-bottom: 1.2rem; }
 .hero-delivery { margin: .9rem 0 0; }
-.points { list-style: none; margin: 1.2rem 0; padding: 0; display: flex; flex-direction: column; gap: .7rem; }
-.points li { padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card); font-size: .95rem; }
-.cta-link { display: inline-flex; align-items: center; min-height: 56px; padding: 0 1.8rem; border-radius: 999px;
-  background: transparent; border: 2px solid var(--gold); color: var(--gold); font-weight: 700; text-decoration: none; gap: .6rem; }
-.cta-link:hover { background: rgba(227, 182, 92, .12); }
-.hero-form { flex: 1 1 420px; min-width: 0; max-width: 620px; scroll-margin-top: 1rem; }
+.hero-form { flex: 1 1 500px; min-width: 0; max-width: 620px; scroll-margin-top: 1rem; }
 .hero-form:focus { outline: none; }
 .app { background: var(--card); border: 2px solid var(--accent); border-radius: 22px;
-  padding: 1.2rem; box-shadow: 0 12px 44px rgba(0,0,0,.25), 0 0 0 7px rgba(108,195,174,.06); }
-.hero-form:target .app, .hero-form:focus-visible .app { box-shadow: 0 0 0 5px rgba(108,195,174,.28), 0 12px 44px rgba(0,0,0,.25); }
-.form-kicker { display: flex; align-items: center; gap: .45rem; width: fit-content; margin: 0 0 .8rem;
-  padding: .35rem .8rem; background: var(--accent); color: var(--accent-ink); border-radius: 999px;
-  font-size: .83rem; font-weight: 800; }
-.form-kicker svg { width: 1rem; height: 1rem; flex: none; }
-.form-journey { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .75rem 0 1rem;
-  font-size: .75rem; color: var(--muted); word-break: keep-all; }
-.form-journey [aria-current="step"] { color: var(--accent); font-weight: 800; }
+  padding: 1.2rem; box-shadow: 0 12px 44px rgba(0,0,0,.2); }
+.form-kicker { margin: 0 0 .5rem; color: var(--accent); font-size: .9rem; font-weight: 800; }
 .app .top h2 { font-size: 1.3rem; margin: 0 0 .15rem; }
 .app .top .sub { margin: 0 0 .8rem; color: var(--muted); font-size: .85rem; }
 @media (max-width: 767px) {
   .hero { gap: 1.5rem; }
-  .hero-copy { flex-basis: 100%; }
   .hero-form { flex-basis: 100%; }
+  .hero-copy { flex-basis: 100%; }
 }
 
 /* 무료 결과(6)·상품 선택(7): 데스크톱에서 좌측 소개글을 접고 넓고 중앙에 배치해 읽기 쉽게.
    입력 단계(1~5)는 기존 2단 배치를 그대로 유지한다. */
 @media (min-width: 768px) {
   .hero.result-wide { gap: 0; }
-  .hero.result-wide .hero-copy { display: none; }
   .hero.result-wide .hero-form { flex: 1 1 100%; max-width: 860px; margin: 0 auto; }
 }
+.hero.result-wide .hero-copy { display: none; }
 
 /* 진행 표시 */
 .progress { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; }
