@@ -846,19 +846,16 @@ function show(n) {
   steps.forEach(function (s) { s.hidden = parseInt(s.getAttribute("data-step"), 10) !== current; });
   bar.style.width = (current / TOTAL_STEPS * 100) + "%";
   stepLabel.textContent = current + " / " + TOTAL_STEPS;
-  var phase = current <= 5 ? "input" : current === 6 ? "result" : "report";
   var phaseLabel = document.getElementById("form-phase-label");
-  if (phaseLabel) phaseLabel.textContent = phase === "input" ? "여기에서 입력하세요 · 무료" :
-    phase === "result" ? "나의 무료 결과를 확인하세요" : "더 자세히 살펴보세요";
+  if (phaseLabel) phaseLabel.textContent = current <= 5 ? "무료 사주 입력" :
+    current === 6 ? "무료 결과" : "보고서 선택";
   var phaseSub = document.getElementById("form-sub");
-  if (phaseSub) phaseSub.textContent = phase === "input" ?
-    "아래 질문에 답하면 무료 명식과 요약을 확인할 수 있어요. 회원가입은 필요하지 않아요." :
-    phase === "result" ? "입력하신 정보로 계산한 명식과 요약이에요." :
-    "무료 결과를 살펴본 뒤 필요한 보고서를 고르세요.";
-  document.querySelectorAll(".form-journey [data-phase]").forEach(function (item) {
-    if (item.getAttribute("data-phase") === phase) item.setAttribute("aria-current", "step");
-    else item.removeAttribute("aria-current");
-  });
+  if (phaseSub) phaseSub.textContent = current === 1 ?
+    "먼저 상담 유형을 고르고 다음 단계에서 출생정보를 입력하세요." :
+    current <= 5 ? "출생정보와 궁금한 내용을 입력해 주세요." :
+    current === 6 ? "입력한 정보로 계산한 무료 요약입니다." :
+    current === 7 ? "무료 결과를 살펴본 뒤 필요한 보고서를 고르세요." :
+    "입력 내용을 확인해 주세요.";
   prevBtn.disabled = current === 1;
   nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
   // 무료 결과(6)·상품 선택(7)은 데스크톱에서 넓고 중앙에 배치한다(입력 단계는 그대로).
