@@ -35,6 +35,22 @@ class HomeServedTest(unittest.TestCase):
         for path in ("/static/home.css", "/static/app.css", "/static/app.js"):
             self.assertEqual(self.c.get(path).status_code, 200, path)
 
+    def test_original_home_illustrations_are_local_and_small(self):
+        for name in ("hero-night.webp", "basic-report.webp", "deep-report.webp"):
+            response = self.c.get("/static/" + name)
+            try:
+                self.assertEqual(response.status_code, 200, name)
+                self.assertEqual(response.data[:4], b"RIFF", name)
+                self.assertLess(len(response.data), 150_000, name)
+            finally:
+                response.close()
+        css = _read("static/home.css")
+        js = _read("static/app.js")
+        self.assertIn("/static/hero-night.webp", css)
+        self.assertIn("/static/basic-report.webp", js)
+        self.assertIn("/static/deep-report.webp", js)
+        self.assertNotIn("sajuin.com", css + js + _read("templates/index.html"))
+
     def test_index_uses_home_css_only(self):
         html = _read("templates/index.html")
         self.assertIn("/static/home.css", html)
@@ -60,6 +76,17 @@ class HomeServedTest(unittest.TestCase):
 
 
 class HomeContentHonestyTest(unittest.TestCase):
+    def test_single_clear_input_area_precedes_explanation(self):
+        html = _read("templates/index.html")
+        js = _read("static/app.js")
+        self.assertIn('id="start" tabindex="-1" aria-label="무료 사주 입력 영역"', html)
+        self.assertLess(html.index('class="hero-form"'), html.index('class="hero-copy"'))
+        self.assertIn('id="form-phase-label">무료 사주 입력', html)
+        self.assertNotIn('class="form-journey"', html)
+        self.assertNotIn('class="cta-link"', html)
+        self.assertLess(html.index('name="consultation_type"'), html.index('name="alias"'))
+        self.assertIn('current === 6 ? "무료 결과"', js)
+
     def test_unbuilt_features_labeled_as_coming_soon(self):
         html = _read("templates/index.html")
         for name in ("내 노트", "궁합 초대 링크", "보고서 선물하기"):

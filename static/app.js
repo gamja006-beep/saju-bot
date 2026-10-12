@@ -516,6 +516,13 @@ function selectProductAndGo(id) {
 }
 function cmpCard(pr, cls, scope, selectLabel) {
   var card = el("div", "cmp-card " + cls);
+  var art = document.createElement("img");
+  art.className = "cmp-art";
+  art.src = pr.id === "basic_9900" ? "/static/basic-report.webp" : "/static/deep-report.webp";
+  art.alt = "";  // 상품명·설명 바로 아래에 있으므로 그림은 장식으로 처리한다.
+  art.loading = "lazy";
+  art.decoding = "async";
+  card.appendChild(art);
   var head = el("div", "cmp-head");
   head.appendChild(el("span", "cmp-name", pr.name));
   head.appendChild(el("span", "cmp-price", pr.price));
@@ -588,6 +595,10 @@ function renderProducts() {
               : "<span class=\"badge email\">담당자 확인 후 이메일</span>");
     var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
       esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
+    if (pr.id === "basic_9900" || pr.id === "deep_39000") {
+      var artPath = pr.id === "basic_9900" ? "basic-report.webp" : "deep-report.webp";
+      html = "<img class=\"product-art\" src=\"/static/" + artPath + "\" alt=\"\" loading=\"lazy\" decoding=\"async\">" + html;
+    }
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {
@@ -846,6 +857,16 @@ function show(n) {
   steps.forEach(function (s) { s.hidden = parseInt(s.getAttribute("data-step"), 10) !== current; });
   bar.style.width = (current / TOTAL_STEPS * 100) + "%";
   stepLabel.textContent = current + " / " + TOTAL_STEPS;
+  var phaseLabel = document.getElementById("form-phase-label");
+  if (phaseLabel) phaseLabel.textContent = current <= 5 ? "무료 사주 입력" :
+    current === 6 ? "무료 결과" : "보고서 선택";
+  var phaseSub = document.getElementById("form-sub");
+  if (phaseSub) phaseSub.textContent = current === 1 ?
+    "먼저 상담 유형을 고르고 다음 단계에서 출생정보를 입력하세요." :
+    current <= 5 ? "출생정보와 궁금한 내용을 입력해 주세요." :
+    current === 6 ? "입력한 정보로 계산한 무료 요약입니다." :
+    current === 7 ? "무료 결과를 살펴본 뒤 필요한 보고서를 고르세요." :
+    "입력 내용을 확인해 주세요.";
   prevBtn.disabled = current === 1;
   nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
   // 무료 결과(6)·상품 선택(7)은 데스크톱에서 넓고 중앙에 배치한다(입력 단계는 그대로).
