@@ -60,15 +60,16 @@ class HomeServedTest(unittest.TestCase):
 
 
 class HomeContentHonestyTest(unittest.TestCase):
-    def test_start_link_lands_on_clearly_labeled_input_card(self):
+    def test_single_clear_input_area_precedes_explanation(self):
         html = _read("templates/index.html")
         js = _read("static/app.js")
-        self.assertIn('href="#start"', html)
         self.assertIn('id="start" tabindex="-1" aria-label="무료 사주 입력 영역"', html)
-        self.assertIn('id="form-phase-label">여기에서 입력하세요 · 무료', html)
-        self.assertIn('data-phase="result"', html)
-        self.assertIn('data-phase="report"', html)
-        self.assertIn('phase === "result" ? "나의 무료 결과를 확인하세요"', js)
+        self.assertLess(html.index('class="hero-form"'), html.index('class="hero-copy"'))
+        self.assertIn('id="form-phase-label">무료 사주 입력', html)
+        self.assertNotIn('class="form-journey"', html)
+        self.assertNotIn('class="cta-link"', html)
+        self.assertLess(html.index('name="consultation_type"'), html.index('name="alias"'))
+        self.assertIn('current === 6 ? "무료 결과"', js)
 
     def test_unbuilt_features_labeled_as_coming_soon(self):
         html = _read("templates/index.html")
