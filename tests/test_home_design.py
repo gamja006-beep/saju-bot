@@ -87,11 +87,17 @@ class HomeContentHonestyTest(unittest.TestCase):
         self.assertLess(html.index('name="consultation_type"'), html.index('name="alias"'))
         self.assertIn('current === 6 ? "무료 결과"', js)
 
-    def test_unbuilt_features_labeled_as_coming_soon(self):
+    def test_home_shows_only_available_customer_flow(self):
         html = _read("templates/index.html")
         for name in ("내 노트", "궁합 초대 링크", "보고서 선물하기"):
-            m = re.search(r'<span class="soon">준비 중</span><h3>' + re.escape(name) + "</h3>", html)
-            self.assertIsNotNone(m, name)
+            self.assertNotIn(name, html)
+        self.assertIn('id="report"', html)
+        self.assertIn('class="report-chapters"', html)
+        self.assertIn('id="flow"', html)
+        self.assertIn('class="journey-steps"', html)
+        self.assertIn('id="trust"', html)
+        self.assertNotIn('class="info-card"', html)
+        self.assertIn('href="/privacy"', html)
 
     def test_no_placeholders_or_verified_claims(self):
         html = _read("templates/index.html")
