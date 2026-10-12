@@ -76,6 +76,16 @@ class HomeServedTest(unittest.TestCase):
 
 
 class HomeContentHonestyTest(unittest.TestCase):
+    def test_payment_labels_follow_server_mode_in_both_steps(self):
+        js = _read("static/app.js")
+        products = js.split("function renderProducts()", 1)[1].split("// ---- 8단계", 1)[0]
+        confirmation = js.split("// 완료 영역", 1)[1].split("function orderPayload()", 1)[0]
+        self.assertIn('(window.PAY_CONFIG || {}).enabled', products)
+        self.assertIn('window.PAY_CONFIG.mode === "live" ? "결제 진행" : "테스트 결제 진행"', products)
+        self.assertIn('payCfg.mode === "live" ? "결제하기" : "테스트 결제하기"', confirmation)
+        self.assertIn('결제 기능 준비 중', products)
+        self.assertIn('결제 기능 준비 중', confirmation)
+
     def test_single_clear_input_area_precedes_explanation(self):
         html = _read("templates/index.html")
         js = _read("static/app.js")
