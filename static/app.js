@@ -846,6 +846,14 @@ function show(n) {
   steps.forEach(function (s) { s.hidden = parseInt(s.getAttribute("data-step"), 10) !== current; });
   bar.style.width = (current / TOTAL_STEPS * 100) + "%";
   stepLabel.textContent = current + " / " + TOTAL_STEPS;
+  var phase = current <= 5 ? "input" : current === 6 ? "result" : "report";
+  var phaseLabel = document.getElementById("form-phase-label");
+  if (phaseLabel) phaseLabel.textContent = phase === "input" ? "여기에서 입력하세요 · 무료" :
+    phase === "result" ? "나의 무료 결과를 확인하세요" : "더 자세히 살펴보세요";
+  document.querySelectorAll(".form-journey [data-phase]").forEach(function (item) {
+    if (item.getAttribute("data-phase") === phase) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  });
   prevBtn.disabled = current === 1;
   nextBtn.style.display = current === TOTAL_STEPS ? "none" : "";
   // 무료 결과(6)·상품 선택(7)은 데스크톱에서 넓고 중앙에 배치한다(입력 단계는 그대로).
