@@ -222,20 +222,68 @@ table.pillars .ko { font-size: .8rem; color: var(--muted); }
   object-position: center 55%; margin-bottom: .7rem;
   border-radius: 10px; border: 1px solid var(--line-strong); }
 
-/* 본문 섹션 */
-.block { border-top: 1px solid var(--line); padding: 3.2rem 0; }
-.block h2 { font-size: 1.7rem; margin-bottom: .5em; }
-.eyebrow { color: var(--gold); font-weight: 700; font-size: .85rem; letter-spacing: .06em; margin: 0 0 .3rem; }
-.cards { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.4rem; }
-.info-card { flex: 1 1 240px; min-width: 0; padding: 1.2rem; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
-.info-card h3 { font-size: 1.15rem; margin-bottom: .3rem; }
-.info-card p { margin: 0; color: var(--muted); font-size: .95rem; }
-.num { display: flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; margin-bottom: .6rem;
-  border-radius: 50%; background: var(--ink); color: var(--bg); font-weight: 700; }
-.soon { display: inline-block; margin-bottom: .5rem; padding: .1rem .7rem; border-radius: 99px; background: var(--line);
-  color: var(--ink); font-size: .78rem; font-weight: 700; }
-.foot { border-top: 1px solid var(--line); padding: 1.6rem 0 2.4rem; color: var(--faint); font-size: .85rem; }
-.foot p { margin: 0 0 .5rem; }
+/* 홈 하단: 각 구역에 서로 다른 읽기 구조를 사용한다. */
+.lower-section { border-top: 1px solid var(--line); padding: 4.8rem 0; }
+.section-intro { max-width: 39rem; margin-bottom: 2rem; }
+.section-intro.compact { margin-bottom: 2.5rem; }
+.section-intro h2, .principles-heading h2 { font-size: clamp(1.8rem, 3.5vw, 2.65rem); letter-spacing: -.035em; word-break: keep-all; }
+.section-intro p:not(.eyebrow) { max-width: 35rem; color: var(--muted); font-size: 1rem; margin-bottom: 0; word-break: keep-all; }
+.eyebrow { color: var(--gold); font-weight: 700; font-size: .76rem; letter-spacing: .15em; margin: 0 0 .9rem; }
+
+/* 보고서: 시각 자료 한 장과 편집된 목차 */
+.report-layout { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: clamp(1.5rem, 5vw, 4rem); align-items: center; }
+.report-figure { position: relative; min-width: 0; margin: 0; border: 1px solid #566179; border-radius: 22px; overflow: hidden; background: #111b2c; }
+.report-figure img { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: cover; }
+.report-figure::after { content: ""; position: absolute; inset: 50% 0 0; background: linear-gradient(transparent, rgba(7,13,26,.88)); pointer-events: none; }
+.report-figure figcaption { position: absolute; z-index: 1; left: 1.25rem; right: 1.25rem; bottom: 1.15rem; display: flex; align-items: center; gap: .75rem; font-family: "Noto Serif KR", "Batang", serif; font-size: .9rem; line-height: 1.5; color: #F7F1E4; }
+.figure-mark { display: grid; place-items: center; flex: none; width: 2.7rem; height: 2.7rem; border: 1px solid rgba(227,182,92,.75); border-radius: 50%; color: var(--gold); font-size: .85rem; letter-spacing: -.04em; }
+.report-chapters { list-style: none; padding: 0; margin: 0; border-top: 1px solid #5A5260; }
+.report-chapters li { display: grid; grid-template-columns: 3rem minmax(0,1fr); gap: .8rem; padding: 1.35rem 0; border-bottom: 1px solid var(--line); }
+.chapter-no { padding-top: .2rem; color: var(--gold); font-family: Georgia, serif; font-size: .82rem; letter-spacing: .07em; }
+.report-chapters h3 { font-size: 1.12rem; margin: 0 0 .22rem; }
+.report-chapters p { color: var(--muted); font-size: .9rem; line-height: 1.6; margin: 0; word-break: keep-all; }
+
+/* 이용 순서: 독립된 카드 대신 이어지는 시간선 */
+.journey-section { padding-bottom: 5rem; }
+.journey-steps { position: relative; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: clamp(1rem, 3vw, 2.5rem); margin: 0; padding: 0; }
+.journey-steps::before { content: ""; position: absolute; top: 1.37rem; left: 1.3rem; right: 1.3rem; height: 1px; background: linear-gradient(90deg, var(--gold), var(--line-strong) 70%, var(--gold)); opacity: .75; }
+.journey-steps li { position: relative; min-width: 0; padding-top: 3.8rem; }
+.journey-no { position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center; gap: .15rem; width: 2.75rem; height: 2.75rem; border: 1px solid var(--gold); border-radius: 50%; background: var(--bg); color: var(--gold); font: 700 .83rem Georgia, serif; letter-spacing: .02em; }
+.journey-no span { font: .5rem Georgia, serif; }
+.journey-steps h3 { font-size: 1.12rem; margin: 0 0 .5rem; word-break: keep-all; }
+.journey-steps h3 small { display: inline-block; vertical-align: .1rem; margin-left: .25rem; border: 1px solid #5A5260; border-radius: 999px; padding: .1rem .45rem; color: var(--gold); font: 600 .65rem "Noto Sans KR", sans-serif; white-space: nowrap; }
+.journey-steps p { max-width: 18rem; margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.65; word-break: keep-all; }
+
+/* 운영 원칙: 한 덩어리의 조용한 안내 */
+.principles { display: grid; grid-template-columns: minmax(0,.8fr) minmax(0,1.2fr); gap: 2rem; padding: clamp(1.6rem, 4vw, 3rem); border: 1px solid #49546D; border-top: 2px solid var(--gold); border-radius: 22px; background: linear-gradient(120deg, #1D263A, #141D30 72%); }
+.principles-heading h2 { margin-bottom: 0; }
+.principles-list > div { padding: .7rem 0 1rem; border-bottom: 1px solid #39445B; }
+.principles-list > div:first-child { padding-top: 0; }
+.principles-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.principles-list h3 { margin: 0 0 .2rem; font-size: 1rem; }
+.principles-list p { color: var(--muted); font-size: .85rem; line-height: 1.6; margin: 0; word-break: keep-all; }
+
+/* 법적 정보는 읽기 쉬운 별도 영역에 담는다. */
+.foot { margin-top: 4.5rem; border-top: 1px solid var(--line); padding: 2.2rem 0 3rem; color: var(--faint); font-size: .8rem; line-height: 1.7; }
+.foot p { margin: 0 0 .4rem; }
+.foot-top { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 2rem; }
+.foot-brand { color: var(--ink); font: 700 1.15rem "Noto Serif KR", "Batang", serif; }
+.foot-links { display: flex; flex-wrap: wrap; gap: .65rem 1.25rem; color: var(--ink); }
+.foot-links a { text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+.foot-business { border-top: 1px solid var(--line); padding-top: 1.15rem; }
+.foot-note { color: var(--faint); margin-top: .8rem !important; }
+
+@media (max-width: 720px) {
+  .lower-section { padding: 3.5rem 0; }
+  .report-layout, .principles { grid-template-columns: 1fr; }
+  .report-figure { max-width: 33rem; }
+  .journey-steps { display: block; padding-left: 0; }
+  .journey-steps::before { top: 1.4rem; bottom: 1.4rem; left: 1.36rem; right: auto; width: 1px; height: auto; background: var(--line-strong); }
+  .journey-steps li { min-height: 7rem; padding: .1rem 0 1.8rem 4rem; }
+  .journey-steps li:last-child { min-height: 0; padding-bottom: 0; }
+  .principles { gap: 1.5rem; }
+  .foot { margin-top: 3rem; }
+}
 
 
 @media (max-width: 360px) {
