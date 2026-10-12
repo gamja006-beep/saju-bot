@@ -850,6 +850,11 @@ function show(n) {
   var phaseLabel = document.getElementById("form-phase-label");
   if (phaseLabel) phaseLabel.textContent = phase === "input" ? "여기에서 입력하세요 · 무료" :
     phase === "result" ? "나의 무료 결과를 확인하세요" : "더 자세히 살펴보세요";
+  var phaseSub = document.getElementById("form-sub");
+  if (phaseSub) phaseSub.textContent = phase === "input" ?
+    "아래 질문에 답하면 무료 명식과 요약을 확인할 수 있어요. 회원가입은 필요하지 않아요." :
+    phase === "result" ? "입력하신 정보로 계산한 명식과 요약이에요." :
+    "무료 결과를 살펴본 뒤 필요한 보고서를 고르세요.";
   document.querySelectorAll(".form-journey [data-phase]").forEach(function (item) {
     if (item.getAttribute("data-phase") === phase) item.setAttribute("aria-current", "step");
     else item.removeAttribute("aria-current");
