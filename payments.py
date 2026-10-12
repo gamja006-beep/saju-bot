@@ -94,6 +94,18 @@ def _mode_prefix(mode):
     return "test_" if mode == "test" else "live_"
 
 
+def _client_key_prefix(mode):
+    # 프런트는 TossPayments(clientKey).payment() 로 결제창을 연다. 이는 해당 상점의
+    # API 개별 연동 '클라이언트 키'(test_ck_/live_ck_)여야 한다. 결제위젯 키(gck)나
+    # 시크릿 키를 클라이언트 자리에 넣는 혼용을 막기 위해 '종류'까지 확인한다.
+    return _mode_prefix(mode) + "ck_"
+
+
+def _secret_key_prefix(mode):
+    # 서버 승인·조회에 쓰는 API 개별 연동 '시크릿 키'(test_sk_/live_sk_). gsk/클라이언트 키 거부.
+    return _mode_prefix(mode) + "sk_"
+
+
 def config_status():
     """결제 설정 상태. enabled는 플래그+키+모드 일관성 모두 충족 시에만 True."""
     flag = _env("PAYMENTS_ENABLED").lower() == "true"
@@ -103,9 +115,11 @@ def config_status():
     enc = _env("ORDER_ENCRYPTION_KEY")
     has_keys = bool(client and secret and enc)
     mode_ok = mode in ("test", "live")
-    # 테스트/라이브 혼용 차단: 키 프리픽스가 모드와 일치해야 한다.
-    prefix = _mode_prefix(mode)
-    keys_match_mode = bool(client.startswith(prefix) and secret.startswith(prefix)) if has_keys else False
+    # 테스트/라이브 혼용과 키 '종류' 혼용을 함께 차단한다: 클라이언트는 <mode>_ck_,
+    # 시크릿은 <mode>_sk_ 로 시작해야 한다(결제위젯 gck/gsk·뒤바뀐 키·다른 모드 거부).
+    keys_match_mode = bool(
+        client.startswith(_client_key_prefix(mode)) and secret.startswith(_secret_key_prefix(mode))
+    ) if has_keys else False
     enabled = flag and has_keys and mode_ok and keys_match_mode
     return {"enabled": enabled, "mode": mode, "has_keys": has_keys, "keys_match_mode": keys_match_mode}
 

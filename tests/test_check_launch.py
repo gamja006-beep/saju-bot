@@ -222,6 +222,33 @@ class AllPassTest(_EnvCase):
         self.assertEqual(r["status"], check_launch.PENDING)
         self.assertIn("접두사", r["detail"])
 
+    def test_widget_keys_rejected(self):
+        # 결제위젯 키(gck/gsk)는 TossPayments.payment() 개별 연동 키가 아니므로 거부한다.
+        _enable_payments(os.environ, "live")
+        os.environ["TOSS_CLIENT_KEY"] = "live_gck_widgetclient"
+        os.environ["TOSS_SECRET_KEY"] = "live_gsk_widgetsecret"
+        r = check_launch.check_payment_config()
+        self.assertEqual(r["status"], check_launch.PENDING)
+        self.assertIn("종류", r["detail"])
+        self.assertFalse(payments.config_status()["keys_match_mode"])
+        self.assertFalse(payments.payments_enabled())
+
+    def test_swapped_client_secret_keys_rejected(self):
+        # 클라이언트 자리에 시크릿 키(sk), 시크릿 자리에 클라이언트 키(ck)를 넣으면 거부한다.
+        _enable_payments(os.environ, "live")
+        os.environ["TOSS_CLIENT_KEY"] = "live_sk_secretinclientslot"
+        os.environ["TOSS_SECRET_KEY"] = "live_ck_clientinsecretslot"
+        self.assertEqual(check_launch.check_payment_config()["status"], check_launch.PENDING)
+        self.assertFalse(payments.payments_enabled())
+
+    def test_client_must_be_ck_secret_must_be_sk(self):
+        # 올바른 종류 쌍(live_ck_ / live_sk_)만 통과한다.
+        _enable_payments(os.environ, "live")  # 기본이 live_ck_/live_sk_ 쌍
+        self.assertTrue(payments.config_status()["keys_match_mode"])
+        # 클라이언트가 sk 종류면 거부
+        os.environ["TOSS_CLIENT_KEY"] = "live_sk_notaclientkey"
+        self.assertFalse(payments.config_status()["keys_match_mode"])
+
 
 class SafetyTest(_EnvCase):
     def test_does_not_print_secret_values(self):

@@ -127,7 +127,8 @@ def check_payment_config():
     if not st.get("has_keys"):
         reasons.append("키 미설정(TOSS_CLIENT_KEY/TOSS_SECRET_KEY/ORDER_ENCRYPTION_KEY)")
     if not st.get("keys_match_mode"):
-        reasons.append("키 접두사가 PAYMENT_MODE 와 불일치(test_/live_)")
+        reasons.append("키 접두사·종류가 PAYMENT_MODE 와 불일치"
+                       "(클라이언트 test_ck_/live_ck_, 시크릿 test_sk_/live_sk_ 필요)")
     if not enabled and not reasons:
         reasons.append("PAYMENTS_ENABLED 미설정")
     if enabled and not is_live:
