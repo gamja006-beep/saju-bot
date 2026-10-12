@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -73,6 +74,19 @@ class HomeServedTest(unittest.TestCase):
     def test_admin_pages_use_app_css(self):
         for rel in ("templates/admin_orders.html", "templates/admin_order_detail.html"):
             self.assertIn("/static/app.css", _read(rel))
+
+    def test_product_notice_matches_payment_mode(self):
+        for enabled, mode, expected, absent in (
+            (False, "test", "결제 버튼은 비활성화", "현재 테스트 결제 모드"),
+            (True, "test", "현재 테스트 결제 모드", "결제 버튼은 비활성화"),
+            (True, "live", "결제 전에 상품·금액·전달기한", "현재 테스트 결제 모드"),
+        ):
+            with self.subTest(enabled=enabled, mode=mode):
+                cfg = {"enabled": enabled, "mode": mode, "clientKey": "", "heldProducts": [], "deliveryEtas": {}}
+                with patch.object(payments, "client_config", return_value=cfg):
+                    body = self.c.get("/").get_data(as_text=True)
+                self.assertIn(expected, body)
+                self.assertNotIn(absent, body)
 
 
 class HomeContentHonestyTest(unittest.TestCase):
