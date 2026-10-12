@@ -516,6 +516,13 @@ function selectProductAndGo(id) {
 }
 function cmpCard(pr, cls, scope, selectLabel) {
   var card = el("div", "cmp-card " + cls);
+  var art = document.createElement("img");
+  art.className = "cmp-art";
+  art.src = pr.id === "basic_9900" ? "/static/basic-report.webp" : "/static/deep-report.webp";
+  art.alt = "";  // 상품명·설명 바로 아래에 있으므로 그림은 장식으로 처리한다.
+  art.loading = "lazy";
+  art.decoding = "async";
+  card.appendChild(art);
   var head = el("div", "cmp-head");
   head.appendChild(el("span", "cmp-name", pr.name));
   head.appendChild(el("span", "cmp-price", pr.price));
@@ -588,6 +595,10 @@ function renderProducts() {
               : "<span class=\"badge email\">담당자 확인 후 이메일</span>");
     var html = "<div class=\"phead\"><span class=\"radio-dot\"></span><span class=\"name\">" +
       esc(pr.name) + "</span><span class=\"price\">" + esc(pr.price) + "</span></div>";
+    if (pr.id === "basic_9900" || pr.id === "deep_39000") {
+      var artPath = pr.id === "basic_9900" ? "basic-report.webp" : "deep-report.webp";
+      html = "<img class=\"product-art\" src=\"/static/" + artPath + "\" alt=\"\" loading=\"lazy\" decoding=\"async\">" + html;
+    }
     html += "<div class=\"desc\">" + badge + esc(pr.desc) + "</div>";
     html += "<div class=\"meta\">제공 방식: " + esc(pr.method) + " · 예상: " + esc(etaText(pr)) + "</div>";
     if (pr.kind !== "free") {

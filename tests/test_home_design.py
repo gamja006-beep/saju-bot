@@ -35,6 +35,22 @@ class HomeServedTest(unittest.TestCase):
         for path in ("/static/home.css", "/static/app.css", "/static/app.js"):
             self.assertEqual(self.c.get(path).status_code, 200, path)
 
+    def test_original_home_illustrations_are_local_and_small(self):
+        for name in ("hero-night.webp", "basic-report.webp", "deep-report.webp"):
+            response = self.c.get("/static/" + name)
+            try:
+                self.assertEqual(response.status_code, 200, name)
+                self.assertEqual(response.data[:4], b"RIFF", name)
+                self.assertLess(len(response.data), 150_000, name)
+            finally:
+                response.close()
+        css = _read("static/home.css")
+        js = _read("static/app.js")
+        self.assertIn("/static/hero-night.webp", css)
+        self.assertIn("/static/basic-report.webp", js)
+        self.assertIn("/static/deep-report.webp", js)
+        self.assertNotIn("sajuin.com", css + js + _read("templates/index.html"))
+
     def test_index_uses_home_css_only(self):
         html = _read("templates/index.html")
         self.assertIn("/static/home.css", html)

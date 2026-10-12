@@ -32,12 +32,19 @@ a { color: inherit; }
 
 /* 히어로 */
 .hero { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; padding: 1.5rem 0 3.5rem; }
-.hero-copy { flex: 1 1 360px; min-width: 0; padding: .5rem 0; }
+.hero-copy { flex: 1 1 360px; min-width: 0; min-height: 31rem; padding: 1.4rem;
+  display: flex; flex-direction: column; align-items: stretch;
+  border: 1px solid #4E5564; border-radius: 22px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(11,20,37,.76) 0%, rgba(11,20,37,.55) 43%, rgba(11,20,37,.96) 100%),
+    url('/static/hero-night.webp') 82% center / cover no-repeat;
+  box-shadow: 0 12px 44px rgba(0,0,0,.16); }
+.hero-art-label { align-self: flex-start; color: var(--gold); font-size: .76rem; font-weight: 700;
+  letter-spacing: .13em; margin: 0 0 1.2rem; }
 .hero-copy h1 { font-size: 2rem; margin-bottom: .6em; word-break: keep-all; }
 @media (min-width: 768px) { .hero-copy h1 { font-size: 2.2rem; } }
 .hero-lead { font-size: 1.1rem; color: var(--muted); }
-.hero-preview { margin: 1.4rem 0 .8rem; padding: 1rem;
-  background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+.hero-preview { margin: auto 0 .8rem; padding: 1rem;
+  background: rgba(11,20,37,.88); border: 1px solid #657584; border-radius: 14px; }
 .hero-preview-label { color: var(--gold); font-size: .85rem; font-weight: 700; margin-bottom: .3rem; }
 .hero-preview p:last-child { margin: 0; word-break: keep-all; }
 .pillar-preview { display: flex; gap: .45rem; margin: .65rem 0; }
@@ -57,7 +64,7 @@ a { color: inherit; }
 @media (max-width: 767px) {
   .hero { gap: 1.5rem; }
   .hero-form { flex-basis: 100%; }
-  .hero-copy { flex-basis: 100%; }
+  .hero-copy { flex-basis: 100%; min-height: 28rem; }
 }
 
 /* 무료 결과(6)·상품 선택(7): 데스크톱에서 좌측 소개글을 접고 넓고 중앙에 배치해 읽기 쉽게.
@@ -200,6 +207,9 @@ table.pillars .ko { font-size: .8rem; color: var(--muted); }
   border: 2px solid var(--line); border-radius: 16px; padding: .9rem 1rem; background: var(--card);
   word-break: keep-all; overflow-wrap: break-word; }
 .cmp-card.cmp-deep { border-color: var(--accent); }
+.cmp-art { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover;
+  object-position: center 55%; margin-bottom: .8rem; border-radius: 10px;
+  background: var(--bg); }
 .cmp-head { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .cmp-name { font-size: 1.1rem; font-weight: 800; word-break: keep-all; }
 .cmp-price { margin-left: auto; font-size: 1.1rem; font-weight: 700; color: var(--gold); white-space: nowrap; }
@@ -208,6 +218,9 @@ table.pillars .ko { font-size: .8rem; color: var(--muted); }
 .cmp-scope li { font-size: .9rem; line-height: 1.55; margin: .3rem 0; }
 .cmp-note { font-size: .78rem; color: var(--muted); margin: 0 0 .7rem; line-height: 1.5; }
 .cmp-btn { width: 100%; min-height: 52px; font-size: .95rem; word-break: keep-all; }
+.product-art { display: block; width: 100%; height: 6rem; object-fit: cover;
+  object-position: center 55%; margin-bottom: .7rem;
+  border-radius: 10px; border: 1px solid var(--line-strong); }
 
 /* 본문 섹션 */
 .block { border-top: 1px solid var(--line); padding: 3.2rem 0; }
