@@ -607,6 +607,9 @@ function renderProducts() {
         html += "<button type=\"button\" class=\"pay\" disabled>준비 중 · 현재 신청 불가</button>";
       } else if (isHeldLive(pr.id)) {
         html += "<button type=\"button\" class=\"pay\" disabled>현재 신청 불가</button>";
+      } else if ((window.PAY_CONFIG || {}).enabled) {
+        html += "<span class=\"pay-next\">8단계에서 " +
+          (window.PAY_CONFIG.mode === "live" ? "결제 진행" : "테스트 결제 진행") + "</span>";
       } else {
         html += "<button type=\"button\" class=\"pay\" disabled>결제 기능 준비 중</button>";
       }
@@ -713,7 +716,8 @@ function renderConfirm() {
         "항목·목적·시기·방법·보유·거부 방법은 <a href=\"/privacy\" target=\"_blank\" rel=\"noopener\">개인정보처리방침</a>을 " +
         "확인하세요. 동의하지 않으면 유료 보고서를 진행할 수 없습니다.</span></label>";
       area.innerHTML = banner + consent +
-        "<button type=\"button\" id=\"test-pay\" class=\"btn primary\" disabled>테스트 결제하기</button>" +
+        "<button type=\"button\" id=\"test-pay\" class=\"btn primary\" disabled>" +
+        (payCfg.mode === "live" ? "결제하기" : "테스트 결제하기") + "</button>" +
         "<span id=\"pay-status\" class=\"copy-status\" aria-live=\"polite\"></span>";
       var agree = document.getElementById("agree-cross-border");
       var payBtn = document.getElementById("test-pay");
