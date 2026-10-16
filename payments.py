@@ -311,6 +311,18 @@ class InMemoryOrderStore:
         paid.sort(key=lambda r: (1 if r.get("report_sent_at") else 0, r.get("paid_at") or _min))
         return paid[:limit]
 
+    def list_orders(self, limit=100, state=None):
+        """읽기 전용: 상태(state)별 주문 목록. state=None(전체)·'PAID'·'PENDING'·'FAILED'.
+        생성시각 최신순으로 정렬한 뒤 limit 을 적용한다. 기존 컬럼만 사용하며 스키마 변경·추가
+        조회(Toss 등)·상태 변경은 하지 않는다(관리자 PENDING·FAILED 가시성 전용)."""
+        self.calls += 1
+        rows = [dict(r) for r in self.orders.values()]
+        if state:
+            rows = [r for r in rows if r.get("status") == state]
+        _min = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+        rows.sort(key=lambda r: r.get("created_at") or _min, reverse=True)
+        return rows[:limit]
+
     def mark_report_sent(self, order_id, now):
         """PAID 주문에 한해 report_sent_at 을 '최초 1회만' 기록한다(멱등·중복 클릭 방어).
 
@@ -544,6 +556,28 @@ class PostgresOrderStore:
                 " FROM orders WHERE " + where +
                 " ORDER BY (report_sent_at IS NOT NULL), paid_at ASC LIMIT %s",
                 ("PAID", int(limit)))
+            rows = cur.fetchall()
+            cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
+                    "created_at", "updated_at", "paid_at", "private_data_expires_at", "report_sent_at"]
+            return [dict(zip(cols, r)) for r in rows]
+
+    def list_orders(self, limit=100, state=None):
+        """읽기 전용: 상태(state)별 주문 목록(전체/PAID/PENDING/FAILED). 생성시각 최신순 LIMIT.
+        state 는 호출부에서 허용 리터럴만 넘기며 여기서도 파라미터 바인딩한다. 기존 컬럼만 사용하고
+        스키마 변경·추가 조회·상태 변경은 하지 않는다(관리자 PENDING·FAILED 가시성 전용)."""
+        where = ""
+        params = []
+        if state:
+            where = " WHERE status = %s"
+            params.append(state)
+        params.append(int(limit))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT order_id, product_code, amount, currency, status, payment_key,"
+                " created_at, updated_at, paid_at, private_data_expires_at, report_sent_at"
+                " FROM orders" + where +
+                " ORDER BY created_at DESC LIMIT %s",
+                tuple(params))
             rows = cur.fetchall()
             cols = ["order_id", "product_code", "amount", "currency", "status", "payment_key",
                     "created_at", "updated_at", "paid_at", "private_data_expires_at", "report_sent_at"]

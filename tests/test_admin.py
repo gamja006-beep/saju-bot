@@ -606,6 +606,159 @@ class AdminStoreTest(unittest.TestCase):
             payments.approve_payment(self.store, "pk%d" % i, o["orderId"], 9900, confirm_fn=_toss_ok)
         self.assertEqual(len(self.store.list_paid_orders(limit=3)), 3)
 
+    # ---- list_orders (PENDING·FAILED·전체 가시성 계약) ----
+    def _mk_paid(self, email="p@b.com"):
+        o = payments.create_order(self.store, "BASIC", email, {})
+        payments.approve_payment(self.store, "pk", o["orderId"], 9900, confirm_fn=_toss_ok)
+        return o["orderId"]
+
+    def _mk_pending(self, email="q@b.com"):
+        return payments.create_order(self.store, "DEEP", email, {})["orderId"]
+
+    def _mk_failed(self, email="r@b.com"):
+        o = payments.create_order(self.store, "DEEP", email, {})
+        def _boom(**kw):
+            raise RuntimeError("toss down")
+        try:
+            payments.approve_payment(self.store, "pk", o["orderId"], o["amount"], confirm_fn=_boom)
+        except Exception:
+            pass
+        return o["orderId"]
+
+    def test_list_orders_filters_by_state(self):
+        paid, pending, failed = self._mk_paid(), self._mk_pending(), self._mk_failed()
+        self.assertEqual([r["order_id"] for r in self.store.list_orders(state="PAID")], [paid])
+        self.assertEqual([r["order_id"] for r in self.store.list_orders(state="PENDING")], [pending])
+        self.assertEqual([r["order_id"] for r in self.store.list_orders(state="FAILED")], [failed])
+
+    def test_list_orders_all_returns_every_state(self):
+        ids = {self._mk_paid(), self._mk_pending(), self._mk_failed()}
+        got = {r["order_id"] for r in self.store.list_orders(state=None)}
+        self.assertEqual(got, ids)
+
+    def test_list_orders_respects_limit(self):
+        for i in range(5):
+            payments.create_order(self.store, "BASIC", "u%d@b.com" % i, {})  # PENDING
+        self.assertEqual(len(self.store.list_orders(limit=3)), 3)
+
+    def test_list_orders_does_not_mutate_state(self):
+        pending = self._mk_pending()
+        self.store.list_orders(state="PENDING")
+        self.assertEqual(self.store.get_order(pending)["status"], "PENDING")  # 읽기 전용
+
+
+class AdminStateFilterRouteTest(unittest.TestCase):
+    """관리자 주문 화면의 상태 필터(결제완료/미완료/실패/전체) 라우트 계약."""
+
+    def setUp(self):
+        os.environ["PAYMENTS_ENABLED"] = "true"
+        os.environ["PAYMENT_MODE"] = "test"
+        os.environ["TOSS_CLIENT_KEY"] = "test_ck_sampleclient"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_samplesecret"
+        os.environ["ORDER_ENCRYPTION_KEY"] = _FERNET_KEY
+        os.environ["ADMIN_USERNAME"] = _ADMIN_USER
+        os.environ["ADMIN_PASSWORD"] = _ADMIN_PW
+        self.store = payments.InMemoryOrderStore()
+        saju_bot.ORDER_STORE = self.store
+        self.c = saju_bot.app.test_client()
+
+    def tearDown(self):
+        for k in _PAY_ENV + _ADMIN_ENV:
+            os.environ.pop(k, None)
+
+    def _paid(self, email="paid@example.test"):
+        o = payments.create_order(self.store, "BASIC", email, {"birth_date": "1990-05-15"})
+        payments.approve_payment(self.store, "pkp", o["orderId"], o["amount"], confirm_fn=_toss_ok)
+        return o["orderId"]
+
+    def _pending(self, email="pend@example.test"):
+        return payments.create_order(self.store, "DEEP", email, {"birth_date": "1990-05-15"})["orderId"]
+
+    def _failed(self, email="fail@example.test"):
+        o = payments.create_order(self.store, "DEEP", email, {"birth_date": "1990-05-15"})
+        def _boom(**kw):
+            raise RuntimeError("toss down")
+        try:
+            payments.approve_payment(self.store, "pkf", o["orderId"], o["amount"], confirm_fn=_boom)
+        except Exception:
+            pass
+        return o["orderId"]
+
+    def _get(self, qs=""):
+        r = self.c.get("/admin/orders" + qs, headers=_auth(_ADMIN_USER, _ADMIN_PW))
+        self.assertEqual(r.status_code, 200)
+        return r.get_data(as_text=True)
+
+    def test_requires_auth(self):
+        for qs in ("?state=PENDING", "?state=FAILED", "?state=all"):
+            self.assertEqual(self.c.get("/admin/orders" + qs).status_code, 401)
+
+    def test_state_filter_bar_present_on_default(self):
+        body = self._get()
+        for label in ("결제완료", "미완료", "실패"):
+            self.assertIn(label, body)
+        self.assertIn('href="/admin/orders?state=PENDING"', body)
+        self.assertIn('href="/admin/orders?state=FAILED"', body)
+
+    def test_default_is_paid_view_unchanged(self):
+        paid, pending, failed = self._paid(), self._pending(), self._failed()
+        body = self._get()  # 기본 = PAID 화면(회귀 방지)
+        self.assertIn('href="/admin/orders/%s"' % paid, body)  # 상세 링크 유지
+        self.assertIn("상세 보기", body)
+        self.assertIn('href="/admin/orders?status=waiting"', body)  # 발송 필터 유지
+        self.assertNotIn(pending, body)
+        self.assertNotIn(failed, body)
+
+    def test_pending_filter_shows_pending_only(self):
+        paid, pending, failed = self._paid(), self._pending(), self._failed()
+        body = self._get("?state=PENDING")
+        self.assertIn(pending, body)
+        self.assertNotIn(paid, body)
+        self.assertNotIn(failed, body)
+        self.assertIn("미완료", body)
+
+    def test_failed_filter_shows_failed_only(self):
+        paid, pending, failed = self._paid(), self._pending(), self._failed()
+        body = self._get("?state=FAILED")
+        self.assertIn(failed, body)
+        self.assertNotIn(paid, body)
+        self.assertNotIn(pending, body)
+        self.assertIn("실패", body)
+
+    def test_all_shows_every_state(self):
+        paid, pending, failed = self._paid(), self._pending(), self._failed()
+        body = self._get("?state=all")
+        for oid in (paid, pending, failed):
+            self.assertIn(oid, body)
+
+    def test_state_view_shows_required_fields(self):
+        pending = self._pending()
+        body = self._get("?state=PENDING")
+        self.assertIn(pending, body)              # 주문번호
+        self.assertIn("심층 보고서", body)          # 상품명(DEEP)
+        self.assertIn("39,000원", body)            # 금액
+        self.assertIn("미완료(미결제)", body)        # 상태 라벨
+        self.assertIn("생성일", body)               # 생성시각 행
+
+    def test_state_view_hides_email_pii(self):
+        self._pending(email="nopiilocal@secretdom.test")
+        self._failed(email="failpii@secretdom.test")
+        for qs in ("?state=PENDING", "?state=FAILED", "?state=all"):
+            body = self._get(qs)
+            self.assertNotIn("nopiilocal", body)      # 이메일 로컬파트 미표시
+            self.assertNotIn("failpii", body)
+            self.assertNotIn("secretdom.test", body)  # 도메인도 미표시
+
+    def test_invalid_state_defaults_to_paid(self):
+        paid = self._paid()
+        body = self._get("?state=bogus")
+        self.assertIn('href="/admin/orders/%s"' % paid, body)  # PAID 화면으로 처리
+        self.assertIn("상세 보기", body)
+
+    def test_empty_messages_per_state(self):
+        self.assertIn("미완료(미결제) 주문이 없습니다.", self._get("?state=PENDING"))
+        self.assertIn("실패한 주문이 없습니다.", self._get("?state=FAILED"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

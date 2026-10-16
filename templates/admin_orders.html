@@ -4,16 +4,24 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>결제 완료 주문</title>
+  <title>주문 관리</title>
   <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
   <main class="app admin-wide">
     <header class="top">
-      <h1>결제 완료 주문</h1>
+      <h1>{% if view == 'paid' %}결제 완료 주문{% else %}주문 목록{% endif %}</h1>
       <p class="sub">읽기 전용 · 총 {{ count }}건 (최대 100건)</p>
     </header>
 
+    <!-- 주문 상태 필터(결제완료/미완료/실패/전체). 기본은 결제완료(기존 화면 유지). -->
+    <nav class="filter-bar" aria-label="주문 상태 필터">
+      {% for f in state_filters %}
+      <a class="filter-chip{% if f.active %} active{% endif %}" href="/admin/orders?state={{ f.key }}"{% if f.active %} aria-current="page"{% endif %}>{{ f.label }}</a>
+      {% endfor %}
+    </nav>
+
+    {% if view == 'paid' %}
     <!-- 관리자 전용 안내(고객 화면 아님). 고객정보·주문번호·키를 넣지 않는다. -->
     <section class="card" id="admin-guide">
       <h2 class="admin-h2">결제 후 보고서 처리 순서</h2>
@@ -47,6 +55,30 @@
     {% else %}
     <p class="card disclaimer">{{ empty_msg }}</p>
     {% endfor %}
+
+    {% else %}
+    <!-- PENDING·FAILED·전체: 읽기 전용 개요(상태·주문번호·상품·금액·생성시각). 상세·발송 기능은
+         제공하지 않으며(상태 변경 없음), 이메일 등 개인정보는 표시하지 않는다. -->
+    <p class="sub">결제 미완료·실패 주문은 확인용 개요입니다. 결제 상태는 토스 대시보드가 정본이며, 이 화면은 주문을 변경하지 않습니다.</p>
+    {% for o in orders %}
+    <div class="card order-card">
+      <div class="order-head">
+        <span class="order-product">{{ o.product_name }}</span>
+        <span class="status-pill status-{{ o.status|lower }}">{{ o.status_label }}</span>
+      </div>
+      <div class="order-rows">
+        <div class="orow"><span class="ok">상태</span><span class="ov">{{ o.status_label }}</span></div>
+        <div class="orow"><span class="ok">생성일</span><span class="ov">{{ o.created_at }}</span></div>
+      </div>
+      <div class="order-meta-min">
+        <span class="order-no">{{ o.order_id }}</span>
+        <span class="order-amt">{{ "{:,}".format(o.amount) }}원</span>
+      </div>
+    </div>
+    {% else %}
+    <p class="card disclaimer">{{ empty_msg }}</p>
+    {% endfor %}
+    {% endif %}
   </main>
 </body>
 </html>

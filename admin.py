@@ -128,6 +128,10 @@ def _product_name(code):
     return payments.PRODUCTS.get(code, {}).get("name", code)
 
 
+# 주문 상태 표시 라벨(관리자 화면 전용). 결제 흐름·DB 상태값은 바꾸지 않는다.
+_ORDER_STATE_LABELS = {"PAID": "결제완료", "PENDING": "미완료(미결제)", "FAILED": "실패"}
+
+
 # ---- 보고서 수동 발송 관리 ----
 def _report_csrf_token(order_id):
     """CSRF 토큰. 서버 전용 비밀(관리자 비밀번호)로 HMAC. 토큰만 폼에 넣고 비밀은 노출하지 않는다.
@@ -607,46 +611,85 @@ def _build_copy_package(order, payload):
     return "\n".join(out)
 
 
+def _state_filters(state):
+    """주문 상태 필터 칩(결제완료/미완료/실패/전체). 기본은 PAID(기존 결제완료 화면)."""
+    return [{"key": "PAID", "label": "결제완료", "active": state == "PAID"},
+            {"key": "PENDING", "label": "미완료", "active": state == "PENDING"},
+            {"key": "FAILED", "label": "실패", "active": state == "FAILED"},
+            {"key": "all", "label": "전체", "active": state == "all"}]
+
+
 @admin_bp.route("/admin/orders", methods=["GET"])
 @require_admin
 def admin_orders():
     store = _get_store()
-    # 발송 상태 필터는 서버에서 적용한다(100건 먼저 가져와 화면에서 거르면 대기 주문이 누락될 수 있음).
-    sel = request.args.get("status") or "all"
-    if sel not in ("all", "waiting", "done"):
-        sel = "all"
-    dispatch = None if sel == "all" else sel
+    # 주문 상태 필터. 기본 PAID 는 기존 '결제 완료 주문' 화면(발송 상태 필터·상세·발송 기록)을
+    # 그대로 유지한다(회귀 방지). PENDING·FAILED·전체는 읽기 전용 개요만 추가로 제공한다.
+    state = request.args.get("state") or "PAID"
+    if state not in ("all", "PAID", "PENDING", "FAILED"):
+        state = "PAID"
+
+    if state == "PAID":
+        # 발송 상태 필터는 서버에서 적용한다(100건 먼저 가져와 화면에서 거르면 대기 주문이 누락될 수 있음).
+        sel = request.args.get("status") or "all"
+        if sel not in ("all", "waiting", "done"):
+            sel = "all"
+        dispatch = None if sel == "all" else sel
+        try:
+            # 저장소가 '발송 대기 먼저, 그룹 내 결제일 오래된 순'으로 정렬·필터 후 limit 을 적용한다.
+            orders = store.list_paid_orders(limit=_MAX_LIST, dispatch=dispatch)
+        except Exception:
+            abort(500)  # 내부 정보 비노출
+        rows = []
+        for o in orders:
+            if o.get("status") != "PAID":  # 방어적 재확인
+                continue
+            rows.append({
+                "order_id": o.get("order_id"),
+                "product_name": _product_name(o.get("product_code")),
+                "amount": o.get("amount"),
+                "currency": o.get("currency", "KRW"),
+                "paid_at": _fmt_dt(o.get("paid_at")),
+                "email_masked": _mask_email(_decrypt_email(store, o.get("order_id"))),
+                "dispatch": _dispatch_view(o),
+            })
+        # 안내용 전달기한은 코드 단일 출처(product_delivery_eta)만 사용하고, 출시 대상(BASIC·DEEP)
+        # 외 상품에는 임의 기한을 만들지 않는다.
+        guide_etas = [{"name": _product_name(c), "eta": _dispatch_eta_guidance(c)}
+                      for c in payments.LAUNCH_PRODUCTS]
+        filters = [{"key": "all", "label": "전체", "active": sel == "all"},
+                   {"key": "waiting", "label": "발송 대기", "active": sel == "waiting"},
+                   {"key": "done", "label": "발송 완료", "active": sel == "done"}]
+        empty_msg = {"all": "결제 완료된 주문이 없습니다.",
+                     "waiting": "발송 대기 중인 주문이 없습니다.",
+                     "done": "발송 완료된 주문이 없습니다."}[sel]
+        return _with_noindex(render_template(
+            "admin_orders.html", view="paid", orders=rows, count=len(rows),
+            state_filters=_state_filters(state), selected_state=state,
+            filters=filters, selected=sel, empty_msg=empty_msg, guide_etas=guide_etas))
+
+    # PENDING·FAILED·전체: 읽기 전용 개요(상태·주문번호·상품·금액·생성시각만). 개인정보(이메일 등)는
+    # 표시하지 않는다. 상세·발송·재전송 기능은 PAID 에서만 제공한다(여기서는 상태 변경 없음).
+    query_state = None if state == "all" else state
     try:
-        # 저장소가 '발송 대기 먼저, 그룹 내 결제일 오래된 순'으로 정렬·필터 후 limit 을 적용한다.
-        orders = store.list_paid_orders(limit=_MAX_LIST, dispatch=dispatch)
+        orders = store.list_orders(limit=_MAX_LIST, state=query_state)
     except Exception:
         abort(500)  # 내부 정보 비노출
-    rows = []
-    for o in orders:
-        if o.get("status") != "PAID":  # 방어적 재확인
-            continue
-        rows.append({
-            "order_id": o.get("order_id"),
-            "product_name": _product_name(o.get("product_code")),
-            "amount": o.get("amount"),
-            "currency": o.get("currency", "KRW"),
-            "paid_at": _fmt_dt(o.get("paid_at")),
-            "email_masked": _mask_email(_decrypt_email(store, o.get("order_id"))),
-            "dispatch": _dispatch_view(o),
-        })
-    # 안내용 전달기한은 코드 단일 출처(product_delivery_eta)만 사용하고, 출시 대상(BASIC·DEEP)
-    # 외 상품에는 임의 기한을 만들지 않는다.
-    guide_etas = [{"name": _product_name(c), "eta": _dispatch_eta_guidance(c)}
-                  for c in payments.LAUNCH_PRODUCTS]
-    filters = [{"key": "all", "label": "전체", "active": sel == "all"},
-               {"key": "waiting", "label": "발송 대기", "active": sel == "waiting"},
-               {"key": "done", "label": "발송 완료", "active": sel == "done"}]
-    empty_msg = {"all": "결제 완료된 주문이 없습니다.",
-                 "waiting": "발송 대기 중인 주문이 없습니다.",
-                 "done": "발송 완료된 주문이 없습니다."}[sel]
-    return _with_noindex(render_template("admin_orders.html", orders=rows, count=len(rows),
-                                         filters=filters, selected=sel, empty_msg=empty_msg,
-                                         guide_etas=guide_etas))
+    rows = [{
+        "order_id": o.get("order_id"),
+        "product_name": _product_name(o.get("product_code")),
+        "amount": o.get("amount"),
+        "currency": o.get("currency", "KRW"),
+        "status": o.get("status"),
+        "status_label": _ORDER_STATE_LABELS.get(o.get("status"), o.get("status")),
+        "created_at": _fmt_dt(o.get("created_at")),
+    } for o in orders]
+    empty_msg = {"all": "주문이 없습니다.",
+                 "PENDING": "미완료(미결제) 주문이 없습니다.",
+                 "FAILED": "실패한 주문이 없습니다."}[state]
+    return _with_noindex(render_template(
+        "admin_orders.html", view="state", orders=rows, count=len(rows),
+        state_filters=_state_filters(state), selected_state=state, empty_msg=empty_msg))
 
 
 def _build_order_detail_view(store, order, order_id, retry_result=None, dispatch_result=None):
