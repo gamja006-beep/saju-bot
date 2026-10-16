@@ -1,20 +1,30 @@
+/* 결제·관리자 화면 공용 CSS. 홈(home.css)과 같은 다크 팔레트를 재사용해 디자인을 통일한다. */
+:root {
+  --bg: #0E1220; --card: #161B2E; --line: #2A3150; --line-strong: #4A5073;
+  --ink: #EDEAE0; --muted: #B7BED2; --faint: #A9B0C3;
+  --gold: #E3B65C; --accent: #6CC3AE; --accent-ink: #0E1220;
+  --warn-bg: #3A2F12; --warn-ink: #F3D9A0; --err: #FF9C8F; --ok: #8FE0B8;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-  background: #f4f5f7;
-  color: #1c1e26;
+  font-family: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
   font-size: 17px;
-  line-height: 1.5;
+  line-height: 1.6;
   -webkit-text-size-adjust: 100%;
+  color-scheme: dark;
 }
+a { color: var(--accent); }
 .app {
   max-width: 480px;
   margin: 0 auto;
   padding: 16px 16px 40px;
 }
 .top h1 { font-size: 22px; margin: 8px 0 2px; }
-.top .sub { margin: 0 0 12px; color: #6b7280; font-size: 14px; }
+.top .sub { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.sub { color: var(--muted); }
 .progress { height: 8px; background: #e5e7ef; border-radius: 99px; overflow: hidden; }
 .progress-bar { height: 100%; width: 12.5%; background: #5b6ef5; transition: width .2s; }
 .step-label { text-align: right; color: #6b7280; font-size: 13px; margin: 6px 0 14px; }
@@ -51,13 +61,14 @@ body {
 
 .nav { display: flex; gap: 10px; margin-top: 16px; }
 .btn {
-  flex: 1; padding: 16px; font-size: 17px; font-weight: 700; border: none;
+  flex: 1; padding: 16px; font-size: 17px; font-weight: 700;
+  border: 1px solid transparent; background: var(--line-strong); color: var(--ink);
   border-radius: 12px; cursor: pointer; min-height: 56px;
 }
-.btn.primary { background: #5b6ef5; color: #fff; }
-.btn.ghost { background: #e5e7ef; color: #374151; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
 .btn:disabled { opacity: .5; cursor: default; }
-.form-error { color: #c0392b; font-size: 14px; margin: 12px 2px 0; min-height: 18px; }
+.form-error { color: var(--err); font-size: 14px; margin: 12px 2px 0; min-height: 18px; }
 
 .myeongsik { margin-top: 6px; }
 table.pillars { width: 100%; border-collapse: collapse; text-align: center; margin: 8px 0; }
@@ -67,7 +78,7 @@ table.pillars .gz { font-size: 24px; font-weight: 800; display: block; }
 table.pillars .ko { font-size: 12px; color: #555; }
 .meta { font-size: 14px; color: #374151; margin-top: 8px; }
 .warn { margin-top: 10px; padding: 10px; background: #fff6e0; border-radius: 8px; font-size: 13px; }
-.disclaimer { margin-top: 12px; font-size: 12px; color: #6b7280; }
+.disclaimer { margin-top: 12px; font-size: 12px; color: var(--muted); }
 
 .products { display: flex; flex-direction: column; gap: 12px; }
 .product { border: 1px solid #e0e3ea; border-radius: 12px; padding: 14px; cursor: pointer; }
@@ -91,7 +102,7 @@ table.pillars .ko { font-size: 12px; color: #555; }
 .notices { font-size: 13px; color: #6b7280; margin-top: 14px; padding-left: 18px; }
 .notices li { margin: 6px 0; }
 
-.copy-status { margin-left: 10px; font-size: 14px; color: #2e7d32; }
+.copy-status { margin-left: 10px; font-size: 14px; color: var(--ok); }
 
 /* 국외 이전 동의 박스(결제 직전). 동의 전에는 결제 버튼이 비활성화된다. */
 .consent-box { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px;
@@ -169,11 +180,11 @@ table.pillars .ko { font-size: 12px; color: #555; }
 /* 결제 후 보고서 처리 흐름(목록·상세 공통). 작은 화면에서 자연스럽게 줄바꿈, 가로 스크롤 없음 */
 .report-flow { margin: 10px 0; }
 .report-flow .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.flow-step { font: inherit; cursor: pointer; background: #eef2ff; border: 1px solid #c7d2fe;
-  color: #1e3a8a; border-radius: 999px; padding: 8px 12px; min-height: 40px; line-height: 1.2; }
-.flow-step:hover, .flow-step[aria-expanded="true"] { background: #1a5fb4; color: #fff; border-color: #1a5fb4; }
-.flow-step:focus-visible { outline: 2px solid #1a5fb4; outline-offset: 2px; }
-.flow-arrow { color: #9aa0a6; }
+.flow-step { font: inherit; cursor: pointer; background: #1E2540; border: 1px solid var(--line-strong);
+  color: var(--ink); border-radius: 999px; padding: 8px 12px; min-height: 40px; line-height: 1.2; }
+.flow-step:hover, .flow-step[aria-expanded="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.flow-step:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.flow-arrow { color: var(--muted); }
 #flow-desc { margin-top: 8px; min-height: 1.4em; }
 
 @media (max-width: 360px) {
@@ -185,55 +196,59 @@ table.pillars .ko { font-size: 12px; color: #555; }
 
 /* ===== 관리자 화면 재디자인 (분리된 카드 · 명확한 선택 상태 · 넉넉한 간격 · 오른쪽 이동 표시) ===== */
 .admin-wide { max-width: 720px; }
-.card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 16px;
-  margin: 0 0 14px; box-shadow: 0 1px 2px rgba(16, 24, 40, .04); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+  margin: 0 0 14px; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
 .card .admin-h2 { margin-top: 0; }
-/* 발송 상태 배지 */
+/* 주문 상태 배지(발송 대기/완료 + 주문 상태 결제완료/미완료/실패) */
 .status-pill { display: inline-block; font-size: 13px; font-weight: 700; padding: 4px 12px;
-  border-radius: 999px; line-height: 1.4; }
-.status-wait { background: #fff4e5; color: #92400e; border: 1px solid #fed7aa; }
-.status-done { background: #e7f6ec; color: #166534; border: 1px solid #bbf7d0; }
+  border-radius: 999px; line-height: 1.4; border: 1px solid transparent; }
+.status-wait, .status-pending { background: var(--warn-bg); color: var(--warn-ink); border-color: #6A531E; }
+.status-done, .status-paid { background: #16321F; color: var(--ok); border-color: #2C5B3C; }
+.status-failed { background: #3A1C1C; color: var(--err); border-color: #6A3030; }
 .status-row { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
-.status-row .status-label-k { color: #6b7280; font-size: 14px; }
+.status-row .status-label-k { color: var(--muted); font-size: 14px; }
 /* 공통 정보 행(상세·카드) */
-.orow { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f2f4f7; }
+.orow { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .orow:last-child { border-bottom: none; }
-.orow .ok { flex: 0 0 34%; color: #6b7280; font-size: 14px; }
-.orow .ov { flex: 1; font-weight: 600; font-size: 15px; word-break: break-word; }
+.orow .ok { flex: 0 0 34%; color: var(--muted); font-size: 14px; }
+.orow .ov { flex: 1; font-weight: 600; font-size: 15px; color: var(--ink); word-break: break-word; }
 /* 주문 카드(목록): 상품명+상태 우선, 주문번호·금액은 시각적 우선순위 낮춤 */
 .order-card { display: block; text-decoration: none; color: inherit; }
-.order-card:hover { border-color: #c7d2fe; box-shadow: 0 2px 10px rgba(16, 24, 40, .08); }
+.order-card:hover { border-color: var(--line-strong); box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
 .order-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
-.order-product { font-size: 17px; font-weight: 800; }
+.order-product { font-size: 17px; font-weight: 800; color: var(--ink); }
 .order-meta-min { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px;
-  color: #98a2b3; font-size: 12px; }
+  color: var(--faint); font-size: 12px; }
 .order-meta-min .order-no { word-break: break-all; }
 .order-cta { display: flex; align-items: center; justify-content: flex-end; gap: 6px;
-  margin-top: 10px; color: #1a5fb4; font-weight: 700; }
+  margin-top: 10px; color: var(--accent); font-weight: 700; }
 .order-cta .chevron { font-size: 18px; line-height: 1; }
 .eta-line { margin-top: 10px; }
-/* 발송 상태 필터 바(서버 적용) */
+/* 상태 필터 바(서버 적용) */
 .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .filter-chip { text-decoration: none; display: inline-flex; align-items: center; min-height: 40px;
-  padding: 8px 16px; border-radius: 999px; border: 1px solid #c7d2fe; background: #eef2ff;
-  color: #1e3a8a; font-weight: 700; font-size: 14px; }
-.filter-chip.active { background: #1a5fb4; color: #fff; border-color: #1a5fb4; }
+  padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line-strong); background: #1E2540;
+  color: var(--ink); font-weight: 700; font-size: 14px; }
+.filter-chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 /* 보고서 처리 흐름: 넓은 화면은 가로 중앙 정렬, 좁은 화면은 세로 스텝(↓)으로 이어 가로 스크롤 방지 */
 .report-flow .flow { justify-content: center; }
 .flow-step { min-height: 44px; padding: 10px 14px; font-size: 15px; }
-.flow-desc-card { margin-top: 10px; padding: 12px 14px; background: #f3f6ff;
-  border: 1px solid #c7d2fe; border-radius: 10px; min-height: 1.4em; color: #1e3a8a; }
-.notice-box { margin-top: 10px; border: 1px solid #e3e6ea; border-radius: 10px; background: #fafafa; }
-.notice-box > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: #374151;
+.flow-desc-card { margin-top: 10px; padding: 12px 14px; background: #1E2540;
+  border: 1px solid var(--line-strong); border-radius: 10px; min-height: 1.4em; color: var(--ink); }
+.notice-box { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: #121726; }
+.notice-box > summary { cursor: pointer; padding: 11px 14px; font-weight: 700; color: var(--ink);
   min-height: 44px; display: flex; align-items: center; list-style: none; }
 .notice-box > summary::-webkit-details-marker { display: none; }
-.notice-box > summary::before { content: "▸"; margin-right: 8px; color: #9aa0a6; }
+.notice-box > summary::before { content: "▸"; margin-right: 8px; color: var(--muted); }
 .notice-box[open] > summary::before { content: "▾"; }
-.notice-box[open] > summary { border-bottom: 1px solid #eef0f4; }
+.notice-box[open] > summary { border-bottom: 1px solid var(--line); }
 .notice-box .sub { margin: 8px 14px; }
-.warn-strong { color: #92400e; font-weight: 600; }
+.warn-strong { color: var(--warn-ink); font-weight: 600; }
+/* 보고서 생성자료 편집창(상세): 다크 배경에서 또렷하게, 가로 스크롤 없이 줄바꿈 */
+.report-edit { margin-top: 10px; padding: 12px; background: #0B0F1A; color: var(--ink);
+  border: 1px solid var(--line-strong); border-radius: 10px; max-width: 100%; }
 @media (max-width: 520px) {
   .report-flow .flow { flex-direction: column; align-items: stretch; }
   .flow-step { width: 100%; justify-content: center; text-align: center; }
-  .flow-arrow { transform: rotate(90deg); align-self: center; color: #9aa0a6; }
+  .flow-arrow { transform: rotate(90deg); align-self: center; color: var(--muted); }
 }
