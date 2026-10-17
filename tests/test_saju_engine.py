@@ -1436,5 +1436,77 @@ class GoldBaselineTest(unittest.TestCase):
             self.assertNotEqual(bw["sect1"]["day"]["ganzhi"], bw["sect2"]["day"]["ganzhi"], name)
 
 
+class TenGodHiddenStemTest(unittest.TestCase):
+    """십신·지장간 결정형 계산(최종 pillars·일간 기준)."""
+
+    def _ten(self, p, key):
+        return p[key]["ten_god"]["ko"]
+
+    def _hidden(self, p, key):
+        return [(h["gan"], h["gan_ko"], h["ten_god"]["ko"]) for h in p[key]["hidden_stems"]]
+
+    def test_ten_gods_fixed_values(self):
+        # 1990-05-15 14:30 남(경도 미입력=벽시계). 명식 庚午/辛巳/庚辰/癸未.
+        p = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
+        self.assertEqual(self._ten(p, "year"), "비견")
+        self.assertEqual(self._ten(p, "month"), "겁재")
+        self.assertEqual(self._ten(p, "day"), "비견")   # 일간 자신 = 비견
+        self.assertEqual(self._ten(p, "time"), "상관")
+        # 한자 병기도 함께 제공
+        self.assertEqual(p["month"]["ten_god"]["hanja"], "劫財")
+
+    def test_hidden_stems_and_their_ten_gods_fixed(self):
+        p = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
+        self.assertEqual(self._hidden(p, "year"), [("丁", "정", "정관"), ("己", "기", "정인")])
+        self.assertEqual(self._hidden(p, "month"),
+                         [("丙", "병", "편관"), ("庚", "경", "비견"), ("戊", "무", "편인")])
+        self.assertEqual(self._hidden(p, "day"),
+                         [("戊", "무", "편인"), ("乙", "을", "정재"), ("癸", "계", "상관")])
+        self.assertEqual(self._hidden(p, "time"),
+                         [("己", "기", "정인"), ("丁", "정", "정관"), ("乙", "을", "정재")])
+
+    def test_day_master_ten_god_always_bi_gyeon(self):
+        # 어떤 입력이든 일주 천간의 십신은 비견(比肩)이다(일간 자신).
+        for d in ("1984-02-05", "2000-08-20", "1991-02-03"):
+            p = compute_saju("solar", d, "08:30", "여")["pillars"]
+            self.assertEqual(p["day"]["ten_god"]["hanja"], "比肩", d)
+
+    def test_time_unknown_omits_time_ten_god(self):
+        p = compute_saju("solar", "1990-05-15", None, "남")["pillars"]
+        self.assertIsNone(p["time"])  # 시주 자체가 없음
+        for key in ("year", "month", "day"):
+            self.assertIn("ten_god", p[key])
+            self.assertIn("hidden_stems", p[key])
+
+    def test_present_pillars_have_valid_ten_gods(self):
+        _VALID = {"比肩", "劫財", "食神", "傷官", "偏財", "正財",
+                  "偏官", "正官", "偏印", "正印"}
+        p = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
+        for key in ("year", "month", "day", "time"):
+            self.assertIn(p[key]["ten_god"]["hanja"], _VALID, key)
+            for h in p[key]["hidden_stems"]:
+                self.assertIn(h["ten_god"]["hanja"], _VALID)
+
+    def test_lunar_and_leap_inputs_produce_ten_gods(self):
+        for args in (("lunar", "1990-04-21", "08:30", "여", False),
+                     ("lunar", "2020-04-15", "08:30", "남", True)):
+            cal, d, t, g, leap = args
+            p = compute_saju(cal, d, t, g, is_leap_month=leap)["pillars"]
+            self.assertEqual(p["day"]["ten_god"]["hanja"], "比肩", args)
+            self.assertTrue(p["month"]["hidden_stems"])
+
+    def test_jieqi_and_late_zi_boundaries_have_ten_gods(self):
+        # 절입 경계(2012-02-04 19:23)·23시 경계(23:30) 모두 십신이 생성되고 일주는 비견.
+        for d, t in (("2012-02-04", "19:23"), ("1990-05-15", "23:30")):
+            p = compute_saju("solar", d, t, "남")["pillars"]
+            self.assertEqual(p["day"]["ten_god"]["ko"], "비견", (d, t))
+            self.assertTrue(all(p[k]["hidden_stems"] for k in ("year", "month", "day", "time")))
+
+    def test_deterministic_same_input_same_ten_gods(self):
+        a = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
+        b = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
+        self.assertEqual(a, b)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

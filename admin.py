@@ -285,6 +285,30 @@ def _pillar_text(p):
     return "%s (%s)" % (gz, ko) if ko else gz
 
 
+def _ten_god_label(tg):
+    """십신 dict({'ko','hanja'}) -> '비견(比肩)'. 한글+한자 병기."""
+    if not tg:
+        return _NA
+    ko = _txt(tg.get("ko"))
+    hanja = _txt(tg.get("hanja"))
+    if ko and hanja:
+        return "%s(%s)" % (ko, hanja)
+    return ko or hanja or _NA
+
+
+def _hidden_stems_text(hidden):
+    """지장간 목록 -> '丙(병)=편관(偏官) · 庚(경)=비견(比肩)'. 한자+한글, 각 지장간의 십신 병기."""
+    if not hidden:
+        return _NA
+    parts = []
+    for h in hidden:
+        g = _txt(h.get("gan"))
+        gk = _txt(h.get("gan_ko"))
+        head = "%s(%s)" % (g, gk) if gk else g
+        parts.append("%s=%s" % (head, _ten_god_label(h.get("ten_god"))))
+    return " · ".join(parts) if parts else _NA
+
+
 def _compute_from_payload(payload):
     """저장된 정규화 출생 입력으로 서버에서 명식을 계산한다.
 
@@ -397,6 +421,29 @@ def _build_report_package(order, payload):
         A("- 일주: " + (_pillar_text(pillars.get("day")) or _NA))
         tp = _pillar_text(pillars.get("time"))
         A("- 시주: " + (tp if tp else "출생시간 미상으로 시주 제외"))
+    A("")
+
+    # 4-1. 결정형 계산자료(십신·지장간): 서버가 이미 계산해 제공하는 값. 챗봇은 재계산하지 않는다.
+    #      일간 = 최종 일주 천간 기준. 출생시간 미상이면 시주·시지 값을 만들지 않는다.
+    A("4-1. 결정형 계산자료 (십신·지장간) — 이미 계산되어 제공된 값이며 다시 계산하지 말 것")
+    if saju is None:
+        A("- " + saju_error)
+    else:
+        pillars = saju.get("pillars", {})
+        _labels = (("연주", "연지", "year"), ("월주", "월지", "month"),
+                   ("일주", "일지", "day"), ("시주", "시지", "time"))
+        for gan_label, zhi_label, key in _labels:
+            p = pillars.get(key)
+            if not p:
+                if key == "time":
+                    A("- 시주·시지: 출생시간 미상으로 제외(임의 생성 금지)")
+                continue
+            own = " (일간 자신)" if key == "day" else ""
+            A("- %s 천간 십신: %s(%s) = %s%s" % (
+                gan_label, _txt(p.get("gan")), _txt(p.get("gan_ko")),
+                _ten_god_label(p.get("ten_god")), own))
+            A("- %s(%s) 지장간: %s" % (
+                zhi_label, _txt(p.get("zhi")), _hidden_stems_text(p.get("hidden_stems"))))
     A("")
 
     # 5. 기초 분석자료
@@ -552,8 +599,8 @@ _FINAL_RULES = """[최종 보고서 작성 규칙]
 6. 중학생도 한 번에 이해할 수 있는 일상 한국어 사용. 한 문단은 한 가지 주제, 2~4문장으로 작성
 7. 전문용어를 고객 본문 제목이나 핵심 문장에 사용하지 않음
 8. 전문용어가 꼭 필요하면 쉬운 설명을 먼저 쓰고 용어는 괄호에 한 번만 표시
-9. 한자·십신·지장간·격국·용신·조후·합충형파해 등의 기술 설명은 고객 본문이 아니라 '기술 근거 부록'에만 배치
-10. 기술 근거 부록은 제공 자료 안의 명식·오행·일간만 사용하며, 자료에 없는 계산 결과를 추가하지 않음
+9. 한자·명리 전문용어(십신·지장간·격국·용신·조후·합충형파해·납음·공망·신살·12운성·신강·신약·월령 등)는 고객 본문·제목·요약·표·각주에 직접 쓰지 않음(쉬운 말로 대체). 전문용어·'기술 근거 부록' 허용 여부는 아래 [상품별 작성 지침]을 우선 적용
+10. '기술 근거 부록'은 허용된 상품에서만 작성하고, 제공된 결정형 계산자료(명식·십신·지장간·오행·일간)만 사용하며 자료에 없는 계산 결과를 추가하지 않음
 11. 출생시간 미상은 시주를 임의 계산하지 않음
 12. 미입력 질문·상황·기간을 만들어내지 않음
 13. 입력된 대상 기간만으로 대운·세운·월운 또는 특정 월의 길흉을 새로 계산하거나 단정하지 않음
@@ -569,7 +616,8 @@ _FINAL_RULES = """[최종 보고서 작성 규칙]
 23. 고객 이메일·주문번호·결제정보는 보고서에 포함하지 않음
 24. 전문가 검수 필요 문구는 해당 상품의 표지에 한 번만 표시하고 본문·머리말·꼬리말에 반복하지 않음
 25. 해석 범위와 한계를 마지막에 짧고 쉬운 말로 표시
-26. 실제 고객이 읽고 바로 이해하고 행동할 수 있는 완성도로 작성"""
+26. 실제 고객이 읽고 바로 이해하고 행동할 수 있는 완성도로 작성
+27. 제공되지 않은 책·고전·논문·라이브러리·참고문헌·출처를 인용하거나 지어내지 않음(제공된 결정형 계산자료 외의 근거를 새로 만들지 않음)"""
 
 _PDF_RULES = """[PDF 제작]
 
@@ -586,11 +634,52 @@ _PDF_RULES = """[PDF 제작]
 - "전문가 검수용 초안"은 필요한 상품의 표지에만 한 번 표시하고 각 페이지에 반복하지 않음"""
 
 
+# 고객 본문(BASIC·DEEP 등 일상어 상품)에 직접 노출하면 안 되는 전문용어. 해석의 '내부 근거'로만 쓴다.
+_FORBIDDEN_TERMS = (
+    "십신", "지장간", "비견", "겁재", "식신", "상관",
+    "정재", "편재", "정관", "편관", "칠살",
+    "정인", "편인", "재성", "관성", "식상",
+    "신강", "신약", "월령", "용신", "격국", "조후",
+    "합충형파해", "납음", "공망", "신살", "12운성",
+)
+
+
+def _easy_language_guide(spec):
+    """상품별 전문용어·부록 작성 지침. EXPERT(전문가 검수)만 기술 근거 부록을 허용한다."""
+    lines = ["[상품별 작성 지침]", ""]
+    if spec.get("expert_review"):
+        lines += [
+            "- 이 상품(전문가 검수 상품)만 '기술 근거 부록'을 허용합니다.",
+            "- 부록에는 제공된 결정형 계산자료(명식·십신·지장간·오행·일간)만 사용하고 새로 계산하지 마세요.",
+            "- 부록을 제외한 고객 본문은 중학생도 이해할 수 있는 일상 한국어로만 작성하세요.",
+        ]
+    else:
+        lines += [
+            "- 이 상품은 '기술 근거 부록'을 만들지 말고 전체를 일상 한국어로만 작성하세요.",
+            "- 제공된 십신·지장간은 해석의 '내부 근거'로만 쓰고, 다음 전문용어를 "
+            "본문·제목·요약·표·각주 어디에도 직접 쓰지 마세요(쉬운 말로 대체):",
+            "  " + ", ".join(_FORBIDDEN_TERMS),
+        ]
+    return "\n".join(lines)
+
+
+_OUTPUT_SELFCHECK = """[출력 전 내부 점검 — 고객 PDF에 출력하지 않음]
+
+PDF를 만들기 전에 아래를 스스로 점검하고, 하나라도 위반이면 보고서를 다시 작성하세요.
+이 점검 과정과 결과는 고객 PDF 어디에도 넣지 않습니다.
+- 일상어 상품(전문가 검수 불필요)에서는 금지 전문용어가 본문·제목·요약·표·각주에 0개인가
+- 제공되지 않은 대운·세운·월운·용신·격국·신살을 새로 만들지 않았는가
+- 제공되지 않은 책·고전·라이브러리·참고문헌을 인용하지 않았는가
+- '30일 행동'이 정확히 3개인가
+- 각 행동에 시작 시점·실행 빈도·확인 기준이 모두 있는가"""
+
+
 def _build_copy_package(order, payload):
     """복사 버튼 한 번으로 챗봇에 넘길 전체 자료(평문).
 
-    [최우선 작업 지시] + [선택 상품] + (고객 자료, 구분자로 감쌈) +
-    [최종 보고서 작성 규칙] + [PDF 제작] 순. 상품 사양은 서버 product_code 로만 선택한다.
+    [최우선 작업 지시] + [선택 상품] + [상품별 작성 지침] + (고객 자료, 구분자로 감쌈) +
+    [최종 보고서 작성 규칙] + [PDF 제작] + [출력 전 내부 점검] 순.
+    상품 사양은 서버 product_code 로만 선택한다.
     """
     code = order.get("product_code")
     name = _product_name(code)
@@ -617,6 +706,8 @@ def _build_copy_package(order, payload):
         A("  · " + s)
     A("- 예상 구성: " + spec["structure"])
     A("")
+    A(_easy_language_guide(spec))
+    A("")
     A(_CUST_START)
     A("")
     A(data_block)
@@ -626,6 +717,8 @@ def _build_copy_package(order, payload):
     A(_FINAL_RULES)
     A("")
     A(_PDF_RULES)
+    A("")
+    A(_OUTPUT_SELFCHECK)
     return "\n".join(out)
 
 

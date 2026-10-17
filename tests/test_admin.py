@@ -506,6 +506,57 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn("표지에만 한 번 표시", report)
         self.assertIn("본문·머리말·꼬리말에 반복하지 않음", report)
 
+    # ---- 십신·지장간 결정형 자료 + 쉬운말/금지어/내부점검 지침 ----
+    def test_report_includes_ten_gods_and_hidden_stems(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        self.assertIn("4-1. 결정형 계산자료 (십신·지장간)", report)
+        self.assertIn("다시 계산하지 말 것", report)
+        for lab in ["연주 천간 십신:", "연지(", "월주 천간 십신:", "일주 천간 십신:",
+                    "시주 천간 십신:", "지장간:", "(일간 자신)"]:
+            self.assertIn(lab, report)
+        # 십신 한글 용어가 실제로 들어 있다(예: 비견/겁재/상관 중 하나 이상)
+        self.assertTrue(any(w in report for w in ("비견", "겁재", "상관", "정관", "정인")))
+
+    def test_ten_god_section_time_unknown_excludes_time(self):
+        payload = dict(self._FULL)
+        payload.update({"birth_time": None, "birth_time_status": "unknown"})
+        report, _ = self._report_text(self._make_paid(payload=payload, product="DEEP"))
+        self.assertIn("시주·시지: 출생시간 미상으로 제외", report)
+        self.assertNotIn("시주 천간 십신:", report)
+
+    def test_ten_god_section_has_no_pii_or_longitude(self):
+        report, _ = self._report_text(
+            self._make_paid(email="customer@example.com",
+                            payload=dict(self._FULL), pk="pk_secret_value", product="DEEP"))
+        for bad in ["customer@example.com", "126.978", "pk_secret_value", "encrypted_"]:
+            self.assertNotIn(bad, report)
+
+    def test_basic_deep_forbid_technical_appendix_and_terms(self):
+        # 렌더된 textarea 는 HTML 이스케이프되므로 작은따옴표를 포함하지 않는 부분만 검사한다.
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        self.assertIn("[상품별 작성 지침]", report)
+        self.assertIn("만들지 말고 전체를 일상 한국어로만 작성", report)
+        self.assertIn("비견, 겁재, 식신", report)   # 금지 전문용어 목록
+        self.assertIn("용신, 격국, 조후", report)
+
+    def test_expert_allows_technical_appendix(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="EXPERT"))
+        self.assertIn("이 상품(전문가 검수 상품)만", report)
+        self.assertIn("부록을 제외한 고객 본문은", report)
+        self.assertIn("제공된 결정형 계산자료", report)
+
+    def test_output_selfcheck_present_and_marked_internal(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        self.assertIn("[출력 전 내부 점검", report)
+        self.assertIn("고객 PDF에 출력하지 않음", report)
+        self.assertIn("이 정확히 3개인가", report)                        # '30일 행동'이 정확히 3개인가
+        self.assertIn("시작 시점·실행 빈도·확인 기준이 모두 있는가", report)
+        self.assertIn("제공되지 않은 대운·세운·월운·용신·격국·신살을 새로 만들지 않았는가", report)
+
+    def test_no_fabricated_references_rule(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        self.assertIn("참고문헌·출처를 인용하거나 지어내지 않음", report)
+
     def test_one_paste_customer_data_wrapped_in_delimiters(self):
         # 고객 자료 1~6은 반드시 [고객 입력 시작]과 [고객 입력 끝] 사이에 위치한다.
         # 프리앰블이 두 토큰을 설명문으로 언급하므로, 실제 구분자는 마지막 출현(rindex)이다.

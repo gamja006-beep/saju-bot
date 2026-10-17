@@ -24,6 +24,7 @@ import datetime
 from zoneinfo import ZoneInfo
 
 from lunar_python import Solar
+from lunar_python.util.LunarUtil import LunarUtil
 from korean_lunar_calendar import KoreanLunarCalendar
 
 from saju_time import compute_true_solar, TimeCorrectionError, LONGITUDE_MIN, LONGITUDE_MAX
@@ -83,6 +84,77 @@ ZHI_KO = {
     "子": "자", "丑": "축", "寅": "인", "卯": "묘", "辰": "진", "巳": "사",
     "午": "오", "未": "미", "申": "신", "酉": "유", "戌": "술", "亥": "해",
 }
+
+# ---- 십신(十神)·지장간(地支藏干) 결정형 계산 ----
+# 입력: 최종 확정된 pillars 의 천간/지지. 일간(日干) 기준으로만 계산하는 순수 함수다.
+# 지장간 매핑은 lunar_python 의 검증된 상수(LunarUtil.ZHI_HIDE_GAN)를 그대로 사용한다.
+_ZHI_HIDE_GAN = LunarUtil.ZHI_HIDE_GAN
+_GAN_ELEMENT = {
+    "甲": "목", "乙": "목", "丙": "화", "丁": "화", "戊": "토",
+    "己": "토", "庚": "금", "辛": "금", "壬": "수", "癸": "수",
+}
+_GAN_YANG = frozenset(("甲", "丙", "戊", "庚", "壬"))  # 양간(나머지는 음간)
+_SHENG = {"목": "화", "화": "토", "토": "금", "금": "수", "수": "목"}  # 오행 상생(生)
+_KE = {"목": "토", "토": "수", "수": "화", "화": "금", "금": "목"}      # 오행 상극(克)
+_TEN_GOD_KO = {
+    "比肩": "비견", "劫財": "겁재", "食神": "식신", "傷官": "상관",
+    "偏財": "편재", "正財": "정재", "偏官": "편관", "正官": "정관",
+    "偏印": "편인", "正印": "정인",
+}
+
+
+def _ten_god(day_gan, other_gan):
+    """일간(day_gan) 기준 other_gan 의 십신. 반환 {'hanja','ko'} 또는 None(미지 간)."""
+    de = _GAN_ELEMENT.get(day_gan)
+    oe = _GAN_ELEMENT.get(other_gan)
+    if not de or not oe:
+        return None
+    same_pol = (day_gan in _GAN_YANG) == (other_gan in _GAN_YANG)
+    if oe == de:                       # 같은 오행 -> 비겁
+        h = "比肩" if same_pol else "劫財"
+    elif _SHENG.get(de) == oe:         # 일간이 생함 -> 식상
+        h = "食神" if same_pol else "傷官"
+    elif _KE.get(de) == oe:            # 일간이 극함 -> 재성
+        h = "偏財" if same_pol else "正財"
+    elif _KE.get(oe) == de:            # 상대가 일간을 극함 -> 관살
+        h = "偏官" if same_pol else "正官"
+    elif _SHENG.get(oe) == de:         # 상대가 일간을 생함 -> 인성
+        h = "偏印" if same_pol else "正印"
+    else:
+        return None
+    return {"hanja": h, "ko": _TEN_GOD_KO[h]}
+
+
+def _hidden_stems(zhi, day_gan):
+    """지지(zhi)의 지장간(lunar_python 상수)과 각 지장간의 일간 기준 십신. 한자+한글 병기."""
+    out = []
+    for g in _ZHI_HIDE_GAN.get(zhi, []):
+        out.append({
+            "gan": g,
+            "gan_ko": GAN_KO.get(g, ""),
+            "ten_god": _ten_god(day_gan, g),
+        })
+    return out
+
+
+def _attach_ten_gods(pillars):
+    """최종 pillars 각 기둥에 천간 십신과 지지 지장간(+십신)을 제자리로 덧붙인다.
+
+    - 일간 = 최종 일주 천간(pillars['day']['gan']). 일간 자신의 십신(比肩)도 포함한다.
+    - 연·월(절기 기준)·일·시(진태양시 기준) EightChar 를 섞지 않고, 최종 pillars 에서 뽑은
+      천간/지지만 입력으로 쓰는 순수 계산이다.
+    - 시주가 없으면(출생시간 미상) 시주/시지 관련 값을 생성하지 않는다.
+    """
+    day = pillars.get("day") or {}
+    day_gan = day.get("gan")
+    if not day_gan:
+        return
+    for key in ("year", "month", "day", "time"):
+        p = pillars.get(key)
+        if not p:
+            continue
+        p["ten_god"] = _ten_god(day_gan, p.get("gan"))
+        p["hidden_stems"] = _hidden_stems(p.get("zhi"), day_gan)
 
 
 class SajuInputError(ValueError):
@@ -283,6 +355,9 @@ def compute_saju(calendar="solar", birth_date=None, birth_time=None, gender=None
         # pillars 는 기본 sect=2 결과를 유지한다.
         pillars["day"] = sect2["day"]
         pillars["time"] = sect2["time"]
+
+    # 최종 확정된 pillars(23시 sect·진태양시 반영)의 일간 기준으로 십신·지장간을 덧붙인다.
+    _attach_ten_gods(pillars)
 
     lunar_text = "음력 %d년 %d월%s %d일" % (
         lunar_y, lunar_m, "(윤달)" if lunar_leap else "", lunar_d,
