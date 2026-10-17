@@ -480,6 +480,32 @@ class AdminViewerTest(unittest.TestCase):
                       "YYYYMMDD_상품명_명리상담보고서.pdf", "운영 주체: 알파랩"]:
             self.assertIn(block, report)
 
+    def test_copy_package_requires_plain_language_customer_report(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        for rule in [
+                "한눈에 보는 5가지 요약",
+                "중학생도 한 번에 이해할 수 있는 일상 한국어",
+                "기술 근거 부록",
+                "30일 행동 3가지",
+                "시작 시점·실행 빈도·확인 기준",
+        ]:
+            self.assertIn(rule, report)
+
+    def test_copy_package_forbids_unprovided_fortune_calculations(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="DEEP"))
+        for rule in [
+                "제공 자료를 계산의 정본으로 사용",
+                "대운·세운·월운 또는 특정 월의 길흉을 새로 계산하거나 단정하지 않음",
+                "조건·점검표·대안으로 작성",
+        ]:
+            self.assertIn(rule, report)
+
+    def test_pdf_rules_require_searchable_text_and_single_review_label(self):
+        report, _ = self._report_text(self._make_paid(payload=dict(self._FULL), product="EXPERT"))
+        self.assertIn("검색·선택 가능한 텍스트", report)
+        self.assertIn("표지에만 한 번 표시", report)
+        self.assertIn("본문·머리말·꼬리말에 반복하지 않음", report)
+
     def test_one_paste_customer_data_wrapped_in_delimiters(self):
         # 고객 자료 1~6은 반드시 [고객 입력 시작]과 [고객 입력 끝] 사이에 위치한다.
         # 프리앰블이 두 토큰을 설명문으로 언급하므로, 실제 구분자는 마지막 출현(rindex)이다.
@@ -496,7 +522,7 @@ class AdminViewerTest(unittest.TestCase):
         markers = {
             "BASIC": "장기·연도별 운세는 상품 범위가 아니므로 제공하지 않음",
             "DEEP": "고객 관심 주제별 상세 분석",
-            "EXPERT": "전문가 검수용 최종 초안",
+            "EXPERT": "본문과 각 페이지에 반복하지 않음",
             "LIFE_DESIGN": "장기 실행 계획 제안",
             "RELATION_BUSINESS": "두 번째 대상의 출생정보가 필요합니다",
             "ANNUAL_VIP": "이번 주문에 해당하는 1차 보고서만 생성",
@@ -527,7 +553,7 @@ class AdminViewerTest(unittest.TestCase):
         self.assertIn("[PDF 제작]", pkg)
         self.assertIn("명식 근거에 기반한 기본 해석", pkg)  # 기본 사양
         # 다른 상품 전용 마커가 섞이지 않는다.
-        self.assertNotIn("전문가 검수용 최종 초안", pkg)
+        self.assertNotIn("본문과 각 페이지에 반복하지 않음", pkg)
         self.assertNotIn("1차 보고서만 생성", pkg)
 
     def test_prompt_injection_treated_as_data(self):
