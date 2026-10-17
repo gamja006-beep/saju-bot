@@ -29,7 +29,9 @@ class HomeServedTest(unittest.TestCase):
     def test_health_still_ok(self):
         r = self.c.get("/health")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json(), {"status": "ok"})
+        j = r.get_json()
+        self.assertEqual(j["status"], "ok")   # 하위 호환: status 유지
+        self.assertIn("revision", j)
 
     def test_index_and_assets_served(self):
         self.assertEqual(self.c.get("/").status_code, 200)

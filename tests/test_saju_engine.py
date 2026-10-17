@@ -156,7 +156,9 @@ class FlaskRegressionTest(unittest.TestCase):
     def test_health_unchanged(self):
         r = self.c.get("/health")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json(), {"status": "ok"})
+        j = r.get_json()
+        self.assertEqual(j["status"], "ok")   # 하위 호환: status 유지
+        self.assertIn("revision", j)           # 배포 식별값 필드 추가
 
     def test_index_200(self):
         r = self.c.get("/")
@@ -244,10 +246,12 @@ class SecurityStaticScanTest(unittest.TestCase):
         self.assertEqual(opens, 0, "engine must not call open()")
 
     def test_bot_env_access_is_only_PORT(self):
-        # saju_bot 의 유일하게 허용되는 환경변수 접근은 PORT 바인딩뿐이다(비밀정보 접근 없음).
+        # saju_bot 이 접근할 수 있는 환경변수는 PORT(바인딩)와 RAILWAY_GIT_COMMIT_SHA(배포 식별값)뿐이다.
+        # 비밀키·DSN·관리자 계정 등 다른 환경변수 접근이 생기면 이 테스트가 실패한다.
+        _allowed = {"PORT", "RAILWAY_GIT_COMMIT_SHA"}
         _, _, _, env_keys, _ = self._analyze("saju_bot.py")
-        self.assertTrue(all(k == "PORT" for k in env_keys),
-                        "saju_bot accesses non-PORT env vars: %s" % env_keys)
+        self.assertTrue(all(k in _allowed for k in env_keys),
+                        "saju_bot accesses disallowed env vars: %s" % env_keys)
 
     def test_no_ai_modules_loaded(self):
         self.assertNotIn("anthropic", sys.modules)
@@ -397,7 +401,9 @@ class Phase2BFlaskTest(unittest.TestCase):
     def test_health_unchanged(self):
         r = self.c.get("/health")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.get_json(), {"status": "ok"})
+        j = r.get_json()
+        self.assertEqual(j["status"], "ok")   # 하위 호환: status 유지
+        self.assertIn("revision", j)           # 배포 식별값 필드 추가
 
     def test_saju_with_birth_place_ok(self):
         r = self.c.post("/saju", json={
@@ -1506,6 +1512,61 @@ class TenGodHiddenStemTest(unittest.TestCase):
         a = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
         b = compute_saju("solar", "1990-05-15", "14:30", "남")["pillars"]
         self.assertEqual(a, b)
+
+
+class HealthRevisionTest(unittest.TestCase):
+    """/health 의 배포 식별값(revision) — RAILWAY_GIT_COMMIT_SHA 기반."""
+
+    _VAR = "RAILWAY_GIT_COMMIT_SHA"
+
+    def setUp(self):
+        self.c = saju_bot.app.test_client()
+        self._saved = os.environ.get(self._VAR)
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop(self._VAR, None)
+        else:
+            os.environ[self._VAR] = self._saved
+
+    def _rev(self):
+        return self.c.get("/health").get_json()["revision"]
+
+    def test_valid_40_sha_returns_first7(self):
+        os.environ[self._VAR] = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"  # 40 hex
+        j = self.c.get("/health").get_json()
+        self.assertEqual(j["status"], "ok")
+        self.assertEqual(j["revision"], "a1b2c3d")
+
+    def test_missing_env_is_unknown(self):
+        os.environ.pop(self._VAR, None)
+        self.assertEqual(self._rev(), "unknown")
+
+    def test_invalid_values_are_unknown(self):
+        for bad in ("not-a-sha", "zzzzzzz", "12345", "  ", "../etc", "gggggggg"):
+            os.environ[self._VAR] = bad
+            self.assertEqual(self._rev(), "unknown", bad)
+
+    def test_status_backward_compatible(self):
+        os.environ[self._VAR] = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        j = self.c.get("/health").get_json()
+        self.assertEqual(j["status"], "ok")
+        self.assertIn("revision", j)
+
+    def test_no_env_dump_or_secret_leak(self):
+        os.environ[self._VAR] = "cafebabecafebabecafebabecafebabecafebabe"
+        os.environ["TOSS_SECRET_KEY"] = "test_sk_SHOULD_NOT_LEAK_123"
+        try:
+            r = self.c.get("/health")
+            j = r.get_json()
+            body = r.get_data(as_text=True)
+            # 응답은 정확히 status, revision 두 키만. 환경변수 덤프·비밀값 없음.
+            self.assertEqual(set(j.keys()), {"status", "revision"})
+            self.assertEqual(j["revision"], "cafebab")
+            self.assertNotIn("SHOULD_NOT_LEAK", body)
+            self.assertNotIn("TOSS_SECRET_KEY", body)
+        finally:
+            os.environ.pop("TOSS_SECRET_KEY", None)
 
 
 if __name__ == "__main__":

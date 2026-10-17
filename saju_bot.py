@@ -172,9 +172,26 @@ def refund():
     return _legal_page('refund')
 
 
+# 배포 식별값(운영/코드 불일치 확인용). Railway 가 주입하는 커밋 SHA 만 읽는다.
+_HEXDIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def _deploy_revision():
+    """RAILWAY_GIT_COMMIT_SHA 가 Git SHA 형식이면 앞 7자리(소문자), 아니면 'unknown'.
+
+    - 이 환경변수 하나만 읽는다(전체 환경변수·다른 값·비밀키/DSN 미접근).
+    - git 명령/subprocess 를 실행하지 않는다. 로그로 출력하지 않는다.
+    """
+    sha = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "").strip()
+    if 7 <= len(sha) <= 64 and all(c in _HEXDIGITS for c in sha):
+        return sha[:7].lower()
+    return "unknown"
+
+
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "ok"})
+    # status 는 기존 그대로 유지(하위 호환), revision 만 추가한다.
+    return jsonify({"status": "ok", "revision": _deploy_revision()})
 
 
 @app.route('/saju', methods=['POST'])
